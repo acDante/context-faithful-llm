@@ -1,2 +1,2 @@
 def get_api_key():
-    return "MY-OPENAI-KEY"
+    return "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"
