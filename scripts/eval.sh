@@ -8,7 +8,7 @@ echo "Activated conda environment"
 
 SCHEMA=("base" "attr" "instr" "opin" "instr+opin")
 MODEL=("chat")  # TODO: use "base" to run experiments with Llama2-7b
-DEMO=("original" "counter")  # Demo mode
+DEMO=("none" "original" "counter")  # Demo mode
 
 for p1 in "${DEMO[@]}"; do
     # Run the Python script with the current combination of parameters
@@ -20,7 +20,7 @@ for p1 in "${DEMO[@]}"; do
                                     --schema ${p2} \
                                     --demo_mode ${p1} \
                                     --num_demos 16 \
-                                    --log_path results/llama2_nq_data \
+                                    --log_path results/llama_nq_data \
                                     --exp_name llama2-7b-chat-demo-${p1}-prompt-${p2}
     done
 done

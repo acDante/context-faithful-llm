@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from engine import Engine, LLamaModel
+from engine import Engine, LLamaModel, Llama2Model
 from tqdm import tqdm
 import numpy as np
 from scipy.special import softmax
@@ -12,7 +12,7 @@ from transformers import LlamaTokenizer
 def qa_to_prompt(query, context, choices, schema, answer=''):
     context = context.replace('“', '"').replace('”', '"').replace('’', "'")
     if schema == 'base':
-        prompt = '{}\n\nQ: {}\nChoices: {}\nA:{}'.format(context, query, choices, answer)
+        prompt = '{}\n\nQ: {}\nChoices: {}\nA: {}'.format(context, query, choices, answer)
     elif schema == 'opin':
         context = context.replace('"', "")
         prompt = 'Bob said, "{}"\n\nQ: {} in Bob\'s opinion?\nChoices: {}\nA: {}'.format(context, query[:-1], choices, answer)
@@ -33,6 +33,7 @@ def main():
     parser.add_argument("--model_name", default="meta-llama/Llama-2-7b-chat-hf")
     parser.add_argument("--schema", default="base", type=str, help="Choose from the following prompting templates: base, attr, instr, opin, instr+opin.")
     parser.add_argument("--demo_mode", default="none", help="Choose from the following demonstrations: none, original.")
+    parser.add_argument('--ans_mode', default='mean', type=str)
     parser.add_argument("--log_path", default='results/', type=str)
     parser.add_argument("--exp_name", type=str, default="Experiment name")
 
@@ -42,12 +43,10 @@ def main():
     with open(args.demo_path, 'r') as fh:
         demo_data = json.load(fh)
     # engine = Engine(args.engine)
-    # tokenizer = tiktoken.encoding_for_model(args.engine)
         
     # Use Llama-2 model instead of GPT
     engine = LLamaModel(args.model_name)
     tokenizer = LlamaTokenizer.from_pretrained(args.model_name)
-
     abs_golds, abs_probs, preds, golds = [], [], [], []
     predictions = []  # save predictions
     for d in tqdm(test_data):
@@ -62,17 +61,22 @@ def main():
             if args.demo_mode == 'original':
                 for demo in demo_data:
                     prompt += (qa_to_prompt(demo['question'], demo['context'], demo['choices'], args.schema, answer=demo['answer']) + '\n\n')
-            # choice = choice.strip() + '.'
-            choice = choice.strip()
+            
+            choice = choice.strip() + '.'
             prompt += qa_to_prompt(question, context, choices, args.schema)
             prompt = prompt + choice
             if engine.check_prompt_length(prompt):
                 continue
-            # num_tokens = len(tokenizer.encode(choice))
-            num_tokens = len(tokenizer.encode(' ' + choice))
+            num_tokens = len(tokenizer(choice)['input_ids']) - 1
             prob = engine.get_prob(prompt, num_tokens)
             if prob is not None:
+                if args.ans_mode == "mean":
+                    prob = prob / num_tokens
+                elif args.ans_mode == 'cond':
+                    c_prob = engine.get_prob(' ' + choice)
+                    prob = prob - c_prob
                 probs.append(prob)
+
         if len(probs) != len(choices.split(';')):
             continue
         choice_probs = softmax(np.array(probs))
@@ -110,6 +114,7 @@ def main():
                 has_ans_wrong += 1
             else:
                 no_ans_wrong += 1
+        
     hasans_acc = has_ans_correct / (has_ans_correct + has_ans_wrong)
     noans_acc = no_ans_correct / (no_ans_correct + no_ans_wrong)
     acc = (has_ans_correct + no_ans_correct) / (has_ans_correct + has_ans_wrong + no_ans_correct + no_ans_wrong)

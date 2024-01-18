@@ -4,6 +4,7 @@ from time import sleep
 import tiktoken
 import torch
 from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokenizer, pipeline
+from transformers import LlamaForCausalLM, LlamaTokenizer
 from torch.nn import functional as F
 import torch
 
@@ -172,24 +173,34 @@ class LLamaModel:
 
             return sum(log_probs[-num_tokens:])
 
-    # def get_prob(self, prompt, num_tokens):
-    #     input_ids = self.tokenizer(prompt,
-    #                                max_length=4096,
-    #                                truncation=True,
-    #                                return_tensors="pt").input_ids.cuda("cuda")
+# the author's implementation
+# This implementation works! 
+class Llama2Model:
+    def __init__(self, engine='meta-llama/Llama-2-7b-chat-hf'):
+        self.engine = LlamaForCausalLM.from_pretrained(
+            engine,
+            torch_dtype=torch.bfloat16,
+            load_in_4bit=True
+        )
+        self.tokenizer = LlamaTokenizer.from_pretrained(engine)
 
-    #     outputs = self.model.generate(input_ids,
-    #                                  max_new_tokens=64,
-    #                                  do_sample=False,
-    #                                  temperature=0.0,
-    #                                  output_scores=True,
-    #                                  return_dict_in_generate=True)
-    #     log_probs = []
-    #     for i, logits in enumerate(outputs.scores):
-    #         softmax_probs = F.softmax(logits, dim=-1)
-    #         log_prob = torch.log(softmax_probs[0][outputs.sequences[0, len(input_ids[0]) + i]]).item()
-    #         # log_prob = logits[0][outputs.sequences[0, len(input_ids[0]) + i]].item()
-    #         log_probs.append(log_prob)
-        
-    #     seq_prob = sum(log_probs) / num_tokens
-    #     return seq_prob
+    def check_prompt_length(self, prompt, max_tokens=64):
+        prompt_length = len(self.tokenizer.encode(prompt))
+        if prompt_length + max_tokens >= 4096:  # Prompt is too long
+            return True
+        return False
+    
+    def get_prob(self, prompt, num_tokens=0):
+        with torch.no_grad():
+            inputs = self.tokenizer([prompt], return_tensors="pt")
+            input_ids = inputs['input_ids'][0]
+            inputs = inputs.to('cuda:0')
+            outputs = self.engine(**inputs)
+            logits = outputs.logits[0][:len(input_ids) - 1]
+            logits = F.log_softmax(logits, dim=-1)
+            log_probs = []
+            for idx, input_id in enumerate(list(input_ids)[1:]):
+                log_probs.append(logits[idx][input_id].item())
+            
+            return sum(log_probs[-num_tokens:])
+
