@@ -6,7 +6,21 @@ from pathlib import Path
 from engine import Engine, LLamaModel
 from evaluation import get_score
 
- 
+
+def get_question_prompt(query, schema, answer=''):
+    if schema == 'base':
+        prompt = 'Q:{}\nA:{}'.format(query, answer)
+    elif schema == 'opin':
+        prompt = 'Q: {} in Bob\'s opinion?\nA:{}'.format(query[:-1], answer)
+    elif schema == 'instr+opin':
+        prompt = 'Q: {} in Bob\'s opinion?\nA:{}'.format(query[:-1], answer)
+    elif schema == 'attr':
+        prompt = 'Q:{} based on the given tex?\nA:{}'.format(query[:-1], answer)
+    elif schema == 'instr':
+        prompt = 'Q:{}\nA:{}'.format(query, answer)
+
+    return prompt
+
 def qa_to_prompt(query, context, schema, demos=[], num_demos=16):
     def get_prompt(query, context, schema, answer=''):
         if schema == 'base':
@@ -56,10 +70,12 @@ def main():
     parser.add_argument("--orig_path", default="./datasets/nq/orig_dev_filtered.json", type=str)
     parser.add_argument("--counter_path", default="./datasets/nq/conflict_dev_filtered.json", type=str)
     parser.add_argument("--engine", default="text-davinci-003", type=str)
-    parser.add_argument("--model_name", default="meta-llama/Llama-2-7b-chat")
+    parser.add_argument("--model_name", default="meta-llama/Llama-2-7b-chat-hf")
     parser.add_argument("--schema", default="base", type=str, help="Choose from the following prompting templates: base, attr, instr, opin, instr+opin.")
     parser.add_argument("--demo_mode", default="none", help="Choose from the following demonstrations: none, original, counter.")
     parser.add_argument("--num_demos", default=16, type=int)
+    parser.add_argument("--use_cad", action="store_true", help="Use context-aware decoding")
+    parser.add_argument("--alpha", default=1.0, type=float, help="Parameter for context-aware decoding")
     parser.add_argument("--log_path", default='results/', type=str)
     parser.add_argument("--exp_name", type=str, default="Experiment name")
 
@@ -72,7 +88,10 @@ def main():
     
     # engine = Engine(args.engine)
     # Use open-source models
-    engine = LLamaModel(args.model_name)
+    if args.use_cad:
+        engine = LLamaModel(args.model_name, use_cad=True, alpha=args.alpha)
+    else:
+        engine = LLamaModel(args.model_name)
 
     step = 0
     gold_answers, pred_answers, orig_answers = [], [], []
@@ -96,14 +115,28 @@ def main():
 
         # prompt = qa_to_prompt(query, context, schema=args.schema, demos=demos, num_demos=args.num_demos)
         prompt = ""
-        for num_demos in range(args.num_demos, 1, -1):  # Use fewer demos if prompt is too long
-            prompt = qa_to_prompt(query, context, schema=args.schema, demos=demos, num_demos=num_demos)
-            if not engine.check_prompt_length(prompt):
-                break
-        if engine.check_prompt_length(prompt):  # Truncate long context that exceeds max input length
-            continue
+        #  CAD Decoding
+        if args.use_cad:
+            for num_demos in range(args.num_demos, 1, -1):  # Use fewer demos if prompt is too long
+                prompt = qa_to_prompt(query, context, schema=args.schema, demos=demos, num_demos=num_demos)
+                if not engine.check_prompt_length(prompt):
+                    break
+            if engine.check_prompt_length(prompt):  # Truncate long context that exceeds max input length
+                continue
+            
+            ques_prompt = get_question_prompt(query, schema=args.schema)
+            pred = engine.complete(prompt, ques_prompt)
 
-        pred = engine.complete(prompt)
+        # Greedy decoding
+        else:  
+            for num_demos in range(args.num_demos, 1, -1):  # Use fewer demos if prompt is too long
+                prompt = qa_to_prompt(query, context, schema=args.schema, demos=demos, num_demos=num_demos)
+                if not engine.check_prompt_length(prompt):
+                    break
+            if engine.check_prompt_length(prompt):  # Truncate long context that exceeds max input length
+                continue
+
+            pred = engine.complete(prompt)
         if pred is None:
             pred = ""
             # continue

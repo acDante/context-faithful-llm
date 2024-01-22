@@ -7,6 +7,7 @@ from transformers import AutoModelForSeq2SeqLM, AutoModelForCausalLM, AutoTokeni
 from transformers import LlamaForCausalLM, LlamaTokenizer
 from torch.nn import functional as F
 import torch
+from models import context_aware_wrapper
 
 openai.api_key = get_api_key()
 
@@ -77,28 +78,27 @@ class Engine:
 
 class LLamaModel:
     """Provide support for both Llama and Llama-2 models"""
-    def __init__(self, model_name='meta-llama/Llama-2-7b-hf'):
+    def __init__(self, model_name='meta-llama/Llama-2-7b-hf', use_cad=False, alpha=None, k=None):
         # download_path = "/home/hpcdu1/experiments/huggingface-hub"
         access_token = "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"   # for access to Llama2
         self.model_name = model_name
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, 
                                                        token=access_token)
-                                                  #    cache_dir=download_path)
+
         if "chat" in self.model_name:
             self.model = AutoModelForCausalLM.from_pretrained(model_name,
                                                               device_map="auto",
                                                               torch_dtype=torch.bfloat16,
-                                                              token=access_token,
-                                                              load_in_4bit=True)
-            
-            # self.model = pipeline('text-generation', model=self.model_name, tokenizer=self.tokenizer,
-            #                       torch_dtype=torch.float16, device_map='auto', use_auth_token=access_token)
+                                                              token=access_token)
         else:
             self.model = AutoModelForCausalLM.from_pretrained(model_name, 
                                                               device_map="auto",
                                                               torch_dtype=torch.bfloat16,
                                                               token=access_token)
-                                                        #   cache_dir=download_path)
+        # CAD Decoding
+        if use_cad:
+            self.model = context_aware_wrapper(self.model, alpha=alpha, k=k)
+            print("Initialized CAD model")
     
     def check_prompt_length(self, prompt, max_tokens=64):
         prompt_length = len(self.tokenizer.encode(prompt))
@@ -113,15 +113,6 @@ class LLamaModel:
                 "role": "user",
                 "content": prompt
             }]
-            # # TODO: Double check the prompt format for Llama2-chat models -> ask the authors
-            # # Maybe they did not modify the prompt for llama2 models
-
-            # TODO: try removing the special tokens
-            # input_ids = self.tokenizer.apply_chat_template(messages, 
-            #                                                max_length=4096,
-            #                                                truncation=True,
-            #                                                return_tensors="pt").cuda("cuda")
-            # outputs = self.model.generate(input_ids, max_new_tokens=max_tokens)
 
             input_ids = self.tokenizer(prompt,
                                        max_length=4096,
@@ -133,13 +124,6 @@ class LLamaModel:
                                           do_sample=False,
                                           temperature=0.0,
                                           top_p=0.0)
-
-            # outputs = self.model.generate(input_ids, max_new_tokens=64, 
-            #                               temperature=1, num_return_sequences=1, top_p=0.95)
-
-            # res = self.model(prompt, temperature=1, num_return_sequences=1, top_p=0.95, 
-            #                 eos_token_id=self.tokenizer.eos_token_id, max_length=4096, max_new_tokens=max_tokens)
-            # output = res[0]['generated_text']
     
         else:
             input_ids = self.tokenizer(prompt,
@@ -163,6 +147,53 @@ class LLamaModel:
             input_ids = inputs['input_ids'].to("cuda")
             outputs = self.model(input_ids)
 
+            logits = outputs.logits[0, :input_ids.shape[-1] - 1]  # ignore the logits of the last token (prob for the next word)
+            probs = F.log_softmax(logits, dim=-1)
+            log_probs = []
+
+            input_ids = input_ids.squeeze()
+            for idx, input_id in enumerate(list(input_ids)[1:]):
+                log_probs.append(probs[idx, input_id].item())
+
+            return sum(log_probs[-num_tokens:])
+    
+    # Make inference with CAD decoding
+    def complete(self, prompt, question_prompt, max_tokens=64):
+        # Context + Question
+        input_ids = self.tokenizer(prompt,
+                                   max_length=4096,
+                                   truncation=True,
+                                   return_tensors="pt").input_ids.cuda("cuda")
+        # Question only
+        question_ids = self.tokenizer(question_prompt,
+                                      max_length=4096,
+                                      truncation=True,
+                                      return_tensors="pt").input_ids.cuda("cuda")
+        
+        self.model.update(question_ids.shape[-1])
+
+        outputs = self.model.generate(input_ids,
+                                      max_new_tokens=max_tokens,
+                                      do_sample=False,
+                                      temperature=0.0,
+                                      top_p=0.0)
+
+        raw_output = self.tokenizer.decode(outputs[0, input_ids.shape[1]:], skip_special_tokens=True)
+        output = raw_output.split("\n")[0]
+
+        return output
+    
+    # Multi-choice question answering with CAD decoding
+    def get_prob(self, prompt, question_prompt, num_tokens):
+        with torch.no_grad():
+            inputs = self.tokenizer([prompt], return_tensors="pt")
+            input_ids = inputs['input_ids'].to("cuda")
+
+            question_ids = self.tokenizer([question_prompt],
+                                          return_tensors="pt").input_ids.cuda("cuda")
+            self.model.update(question_ids.shape[-1])
+
+            outputs = self.model(input_ids)
             logits = outputs.logits[0, :input_ids.shape[-1] - 1]  # ignore the logits of the last token (prob for the next word)
             probs = F.log_softmax(logits, dim=-1)
             log_probs = []
