@@ -15,7 +15,7 @@ def get_question_prompt(query, schema, answer=''):
     elif schema == 'instr+opin':
         prompt = 'Q: {} in Bob\'s opinion?\nA:{}'.format(query[:-1], answer)
     elif schema == 'attr':
-        prompt = 'Q:{} based on the given tex?\nA:{}'.format(query[:-1], answer)
+        prompt = 'Q:{} based on the given text?\nA:{}'.format(query[:-1], answer)
     elif schema == 'instr':
         prompt = 'Q:{}\nA:{}'.format(query, answer)
 
@@ -32,7 +32,7 @@ def qa_to_prompt(query, context, schema, demos=[], num_demos=16):
             context = context.replace('"', "")
             prompt = 'Bob said "{}"\nQ: {} in Bob\'s opinion?\nA:{}'.format(context, query[:-1], answer)
         elif schema == 'attr':
-            prompt = '{}\nQ:{} based on the given tex?\nA:{}'.format(context, query[:-1], answer)
+            prompt = '{}\nQ:{} based on the given text?\nA:{}'.format(context, query[:-1], answer)
         elif schema == 'instr':
             prompt = '{}\nQ:{}\nA:{}'.format(context, query, answer)
         elif schema == 'no_context':
