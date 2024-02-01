@@ -6,6 +6,7 @@ import json
 import argparse
 from pathlib import Path
 from tqdm import tqdm
+from models import context_aware_wrapper
 from metrics import mean_score
 
 
@@ -19,10 +20,19 @@ output_key = {
     "cnn_dm": "highlights"
 }
 
-# TODO: add CAD
-# def get_question_prompt(doc, schema, summary=""):
-#     if schema == "base":
-#         prompt = f'Summary:{summary}'
+def get_question_prompt(doc, schema, summary=""):
+    if schema == "base":
+        prompt = f'Summary:{summary}'
+    elif schema == "opin":
+        prompt = f'Summarise the above article in Bob\'s opinion. Summary:{summary}'
+    elif schema == "attr":
+        prompt = f'Summarise the above article. Summary:{summary}'
+    elif schema == 'instr':
+        prompt = f'Summary:{summary}'
+    elif schema == 'instr+opin':
+        prompt = f'Summarise the above article in Bob\'s opinion. Summary:{summary}'
+
+    return prompt
 
 def get_prompt(doc, schema, summary=""):
     """Context faithful prompting for summarisation"""
@@ -45,6 +55,8 @@ def parse_args():
     parser.add_argument("--dataset", default="cnn_dm", type=str, choices=['cnn_dm', 'xsum'])
     parser.add_argument("--model_name", default="meta-llama/Llama-2-7b-chat-hf")
     parser.add_argument("--num_samples", default=2500, type=int, help="Number of test samples to evaluate on")
+    parser.add_argument("--use_cad", action="store_true", help="Use context-aware decoding")
+    parser.add_argument("--alpha", default=1.0, type=float, help="Parameter for context-aware decoding")
     parser.add_argument("--schema", default="base", type=str, choices=['base', 'opin', 'instr', 'attr', 'instr+opin'],
                         help="which context faithful prompting format to use")
     parser.add_argument("--log_path", default="results/", type=str)
@@ -63,12 +75,16 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(model_name,
                                                  device_map="auto",
                                                  torch_dtype=torch.bfloat16,
-                                                 token=access_token,
-                                                 cache_dir=download_path)
+                                                 token=access_token)
+                                                #  cache_dir=download_path)
     tokenizer = AutoTokenizer.from_pretrained(model_name,
-                                              token=access_token,
-                                              cache_dir=download_path)
+                                              token=access_token)
+                                            #   cache_dir=download_path)
     
+    if args.use_cad:
+        model = context_aware_wrapper(model, alpha=args.alpha, k=1)
+
+    # Load FactKB model
     factkb_tokenizer = AutoTokenizer.from_pretrained("roberta-base", padding="max_length", truncation=True)
     factkb_model = AutoModelForSequenceClassification.from_pretrained("bunsenfeng/FactKB", num_labels=2, device_map="auto")
 
@@ -94,16 +110,25 @@ def main():
             {"role": "user", "content": prompt}
         ]
 
-        input_ids = tokenizer.apply_chat_template(messages, return_tensors="pt")
+        input_ids = tokenizer.apply_chat_template(messages, truncation=True, return_tensors="pt")
         input_ids = input_ids.to("cuda")
 
         # Issue: model tends to generate a very long summary. when to stop?
         # Q: How to set proper hyperparameters for summarisation?
         # TODO: try stopping criteria
+        if args.use_cad:
+            ques_messages = [
+                {"role": "user", "content": get_question_prompt(doc, args.schema)}
+            ]
+            question_ids = tokenizer.apply_chat_template(ques_messages, truncation=True, return_tensors="pt")
+            question_ids = question_ids.to("cuda")
+            model.update(question_ids.shape[-1])
+
         outputs = model.generate(input_ids,
                                  do_sample=False,
-                                 max_new_tokens=512,
+                                 max_new_tokens=256,
                                  temperature=0.0)
+        
         raw_output = tokenizer.decode(outputs[0, input_ids.shape[1]:], skip_special_tokens=True)
         output = raw_output.split("\n")[0]
 
@@ -127,6 +152,7 @@ def main():
 
     # Evaluate the performance:  https://huggingface.co/spaces/hallucinations-leaderboard/leaderboard/blob/main/src/backend/tasks/xsum/task.py#L55
 
+    breakpoint()
     # Compute the ROUGE scores -> Q: which ROUGE implementation to use?
     rouge = evaluate.load('rouge')
     rouge_scores = rouge.compute(predictions=predictions, 
@@ -134,6 +160,7 @@ def main():
                                  use_aggregator=False)
 
     # Compute BERT score
+    # TODO: Debug bert score: when using CAD, the process is killed here for unknown reason
     bert_score = evaluate.load('bertscore')
     bert_score_res = bert_score.compute(predictions=predictions, 
                                         references=references, 
