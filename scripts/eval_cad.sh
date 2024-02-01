@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #SBATCH -J cad+cfp-nq
-#SBATCH -A NLP-CDT-SL4-GPU
+#SBATCH -A NLP-CDT-SL2-GPU
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1

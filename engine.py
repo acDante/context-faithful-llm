@@ -79,22 +79,25 @@ class Engine:
 class LLamaModel:
     """Provide support for both Llama and Llama-2 models"""
     def __init__(self, model_name='meta-llama/Llama-2-7b-hf', use_cad=False, alpha=None, k=None):
-        # download_path = "/home/hpcdu1/experiments/huggingface-hub"
+        download_path = "/home/hpcdu1/experiments/huggingface-hub"
         access_token = "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"   # for access to Llama2
         self.model_name = model_name
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, 
-                                                       token=access_token)
+                                                       token=access_token,
+                                                       cache_dir=download_path)
 
         if "chat" in self.model_name:
             self.model = AutoModelForCausalLM.from_pretrained(model_name,
                                                               device_map="auto",
                                                               torch_dtype=torch.bfloat16,
-                                                              token=access_token)
+                                                              token=access_token,
+                                                              cache_dir=download_path)
         else:
             self.model = AutoModelForCausalLM.from_pretrained(model_name, 
                                                               device_map="auto",
                                                               torch_dtype=torch.bfloat16,
-                                                              token=access_token)
+                                                              token=access_token,
+                                                              cache_dir=download_path)
         # CAD Decoding
         if use_cad:
             self.model = context_aware_wrapper(self.model, alpha=alpha, k=k)

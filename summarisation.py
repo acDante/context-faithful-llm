@@ -40,20 +40,26 @@ def main():
 
     args = parse_args()
     access_token = "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"
-    model_name = "mistralai/Mistral-7B-Instruct-v0.1"
+    download_path = "/home/hpcdu1/experiments/huggingface-hub"
 
+    model_name = args.model_name
     model = AutoModelForCausalLM.from_pretrained(model_name,
                                                  device_map="auto",
                                                  torch_dtype=torch.bfloat16,
-                                                 token=access_token)
+                                                 token=access_token,
+                                                 cache_dir=download_path)
     tokenizer = AutoTokenizer.from_pretrained(model_name,
-                                              token=access_token)
+                                              token=access_token,
+                                              cache_dir=download_path)
     
+    # TODO: Add XSum data
     test_data = datasets.load_dataset('cnn_dailymail', '3.0.0', split='test')
 
     pred_samples = []
     predictions = []
     references = []
+
+    # Q: test data contains about 10k samples, how to speed up inference?
     for idx, sample in tqdm(enumerate(test_data)):
         doc = sample['article']
         reference = sample['highlights']
@@ -68,6 +74,7 @@ def main():
 
         # Issue: model tends to generate a very long summary. when to stop?
         # Q: How to set proper hyperparameters for summarisation?
+        # TODO: stop generation when finding a new line "\n"
         outputs = model.generate(input_ids,
                                  do_sample=False,
                                  max_new_tokens=1000,
@@ -85,8 +92,8 @@ def main():
         pred_sample['prediction'] = output
         pred_samples.append(pred_sample)
 
-        if idx == 25:  # for debugging
-            break
+        # if idx == 25:  # for debugging
+        #     break
     
     # Evaluate the performance:  https://huggingface.co/spaces/hallucinations-leaderboard/leaderboard/blob/main/src/backend/tasks/xsum/task.py#L55
 
@@ -124,6 +131,7 @@ def main():
             for metric_name, value in metrics.items():
                 fout.write(f"{metric_name}: {value:.4f}")
                 fout.write("\t")
+
 
 if __name__ == '__main__':
     main()
