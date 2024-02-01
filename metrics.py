@@ -2,6 +2,9 @@ import sacrebleu
 from rouge_score import rouge_scorer, scoring
 
 
+def mean_score(scores):
+    return sum(scores) / len(scores)
+
 def rouge(refs, preds):
     """
     Returns `t5` style ROUGE scores. See the related implementation:
