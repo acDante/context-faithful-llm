@@ -82,7 +82,7 @@ def main():
                                             #   cache_dir=download_path)
     
     if args.use_cad:
-        model = context_aware_wrapper(model, alpha=args.alpha, k=1)
+        model = context_aware_wrapper(model, alpha=args.alpha, k=0)
 
     # Load FactKB model
     factkb_tokenizer = AutoTokenizer.from_pretrained("roberta-base", padding="max_length", truncation=True)
@@ -122,7 +122,7 @@ def main():
             ]
             question_ids = tokenizer.apply_chat_template(ques_messages, truncation=True, return_tensors="pt")
             question_ids = question_ids.to("cuda")
-            model.update(question_ids.shape[-1])
+            model.update(k=question_ids.shape[-1])
 
         outputs = model.generate(input_ids,
                                  do_sample=False,
@@ -152,7 +152,6 @@ def main():
 
     # Evaluate the performance:  https://huggingface.co/spaces/hallucinations-leaderboard/leaderboard/blob/main/src/backend/tasks/xsum/task.py#L55
 
-    breakpoint()
     # Compute the ROUGE scores -> Q: which ROUGE implementation to use?
     rouge = evaluate.load('rouge')
     rouge_scores = rouge.compute(predictions=predictions, 
