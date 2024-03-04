@@ -1,3 +1,5 @@
+"""Test alternative CAD implementation"""
+
 import torch
 import torch.nn as nn
 from transformers import AutoModelForCausalLM, AutoModelForSequenceClassification, AutoTokenizer
@@ -10,6 +12,7 @@ from tqdm import tqdm
 from models import context_aware_wrapper, CADModel
 import nltk
 from metrics import mean_score
+from cad import CAD
 
 
 # TODO: set maximum length for each model?
@@ -23,11 +26,13 @@ output_key = {
     "cnn_dm": "highlights"
 }
 
+# TODO: make the model to focus on both the context and instructions?
+# TODO: tune the alpha values
 def get_question_prompt(doc, schema, summary=""):
     if schema == "base":
         prompt = f'Summary:{summary}'
     elif schema == "opin":
-        prompt = f'Summary:{summary}'
+        prompt = f'Summarise the above article in one sentence in the narrator\'s opinion. Summary:{summary}'
     elif schema == "attr":
         prompt = f'Summarize the article in one sentence. Summary:{summary}'
     elif schema == 'instr':
@@ -99,16 +104,17 @@ def main():
                                                       cache_dir=download_path)
     
     tokenizer = AutoTokenizer.from_pretrained(model_name,
+                                              use_fast=False,
+                                              padding_side="left",
                                               token=access_token,
                                               cache_dir=download_path)
+    tokenizer.pad_token_id = 0 if tokenizer.pad_token_id is None else tokenizer.pad_token_id
+    tokenizer.bos_token_id = 1
+
     # >>> TODO: compare with CAD implementation on github <<<
     model = base_model
     if args.use_cad:
-        # device = next(base_model.parameters()).device
-        # model = context_aware_wrapper(base_model, alpha=args.alpha)
-        model = CADModel(base_model, alpha=args.alpha)  # Note: this only work on CPU when working on multi GPUs!
-        model = model.to("cuda")
-        model.eval()
+        model = CAD(model=base_model, tokenizer=tokenizer)
 
     # Load FactKB model
     factkb_tokenizer = AutoTokenizer.from_pretrained("roberta-base", padding="max_length", truncation=True,
@@ -166,26 +172,26 @@ def main():
             else:
                 question_prompt = get_question_prompt(doc, args.schema)
                 question_ids = tokenizer(question_prompt,
-                                        max_length=4096,
-                                        truncation=True,
-                                        return_tensors="pt").input_ids.cuda("cuda")
-                # question_ids = question_ids.to(model.device)
+                                         max_length=4096,
+                                         truncation=True,
+                                         return_tensors="pt").input_ids.cuda("cuda")
 
-            model.update(query_ids=question_ids)
+            question_prompt = get_question_prompt(doc, args.schema)
+            raw_output = model.generate(texts=question_prompt,
+                                        texts_with_context=prompt,
+                                        do_sample=False,
+                                        max_new_tokens=128,
+                                        temperature=0.0)
+            output = raw_output[0]
 
-        outputs = model.generate(input_ids,
-                                 do_sample=False,
-                                 max_new_tokens=128,
-                                 temperature=0.0)
-        
-        # outputs = model.generate(input_ids,
-        #                          do_sample=True,
-        #                          max_new_tokens=128,
-        #                          top_p=0.9)
-        
-        raw_output = tokenizer.decode(outputs[0, input_ids.shape[1]:], skip_special_tokens=True)
-        output = raw_output
-        # output = raw_output.split("\n")[0]
+        else:
+            outputs = model.generate(input_ids,
+                                     do_sample=False,
+                                     max_new_tokens=128,
+                                     temperature=0.0)
+            
+            raw_output = tokenizer.decode(outputs[0, input_ids.shape[1]:], skip_special_tokens=True)
+            output = raw_output
 
         predictions.append(output)
         references.append(reference)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH -J cad+cfp-sum
+#SBATCH -J extra_sum
 #SBATCH -A NLP-CDT-SL2-GPU
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -19,8 +19,7 @@ conda activate ~/env/mlkc
 echo "Activated conda environment"
 
 MODEL=${1:-"llama2-7b"}
-DATASET=${2:-"cnn_dm"}
-SCHEMA=${3:-"base"}
+SCHEMA=${2:-"base"}
 
 if [ "$MODEL" = "llama2-7b" ]; then
     MODEL_NAME="meta-llama/Llama-2-7b-hf"  # Use non-chat model
@@ -41,9 +40,8 @@ else
 fi
 
 set -x;
-python summarisation.py --dataset ${DATASET} \
-                        --model_name ${MODEL_NAME} \
+python extractive_sum.py --model_name ${MODEL_NAME} \
                         --num_samples 3000 \
                         --schema ${SCHEMA} \
-                        --log_path results/${DATASET} \
+                        --log_path results/extra_cnn\
                         --exp_name ${MODEL}-zero-shot-prompt-${SCHEMA} \
