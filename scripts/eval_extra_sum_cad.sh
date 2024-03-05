@@ -34,6 +34,8 @@ elif [ "$MODEL" = "mistral-7b" ]; then
     MODEL_NAME="mistralai/Mistral-7B-v0.1"
 elif [ "$MODEL" = "mistral-7b-instr" ]; then
     MODEL_NAME="mistralai/Mistral-7B-Instruct-v0.1"
+elif [ "$MODEL" = "vicuna-13b" ]; then
+    MODEL_NAME="lmsys/vicuna-13b-v1.5"
 elif [ "$MODEL" = "llama-13b" ]; then
     MODEL_NAME="huggyllama/llama-13b"
 else
@@ -41,9 +43,11 @@ else
 fi
 
 set -x;
-python summarisation.py --dataset ${DATASET} \
-                        --model_name ${MODEL_NAME} \
-                        --num_samples 3000 \
-                        --schema ${SCHEMA} \
-                        --log_path results/${DATASET} \
-                        --exp_name ${MODEL}-zero-shot-prompt-${SCHEMA} \
+python summarisation_new_cad.py --dataset ${DATASET} \
+                                --model_name ${MODEL_NAME} \
+                                --num_samples 3000 \
+                                --use_cad \
+                                --alpha 0.5 \
+                                --schema ${SCHEMA} \
+                                --log_path results/${DATASET} \
+                                --exp_name cad-${MODEL}-zero-shot-prompt-${SCHEMA} \
