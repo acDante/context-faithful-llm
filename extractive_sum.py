@@ -74,15 +74,19 @@ def main():
 
     args = parse_args()
     access_token = "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"
-    download_path = "/home/hpcdu1/experiments/huggingface-hub"
+    # download_path = "/home/hpcdu1/experiments/huggingface-hub"
 
     model_name = args.model_name
     base_model = AutoModelForCausalLM.from_pretrained(model_name,
                                                       device_map='auto',
                                                       torch_dtype=torch.bfloat16,
-                                                      token=access_token,
-                                                      cache_dir=download_path)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+                                                      token=access_token)
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name,
+                                              use_fast=True,
+                                              padding_side="left",
+                                              token=access_token)
+    
     tokenizer.pad_token_id = 0 if tokenizer.pad_token_id is None else tokenizer.pad_token_id
     tokenizer.bos_token_id = 1
 
@@ -106,35 +110,37 @@ def main():
         summary = " ".join(highlights)
         important_sents = [article[idx] for idx in range(len(labels)) if labels[idx]== 1]
         prompt = get_prompt(doc, important_sents, args.schema)
-        print(prompt)
         
         # Build the input prompt
         if "chat" in args.model_name:
             messages = [
                 {"role": "user", "content": prompt}
             ]
-            input_ids = tokenizer.apply_chat_template(messages, truncation=True, return_tensors="pt")
-            input_ids = input_ids.to("cuda")
+            inputs = tokenizer.apply_chat_template(messages, truncation=True, return_tensors="pt")
+            input_ids = inputs.to("cuda")
         
         else:
-            input_ids = tokenizer(prompt,
-                                  max_length=4096,
-                                  truncation=True,
-                                  return_tensors="pt").input_ids.cuda("cuda")
+            inputs = tokenizer(prompt,
+                               max_length=4096,
+                               truncation=True,
+                               return_tensors="pt")
+            input_ids = inputs.input_ids.cuda("cuda")
+
         # Generate summary
         if args.use_cad:
             question_prompt = get_question_prompt(doc, args.schema)
-            if "chat" in args.model_name:
-                ques_messages = [
-                    {"role": "user", "content": question_prompt}
-                ]
-                question_ids = tokenizer.apply_chat_template(ques_messages, truncation=True, return_tensors="pt")
-                question_ids = question_ids.to("cuda")
-            else:
-                question_ids = tokenizer(question_prompt,
-                                         max_length=4096,
-                                         truncation=True,
-                                         return_tensors="pt").input_ids.cuda("cuda")    
+            # if "chat" in args.model_name:
+            #     ques_messages = [
+            #         {"role": "user", "content": question_prompt}
+            #     ]
+            #     encoded_questions = tokenizer.apply_chat_template(ques_messages, truncation=True, return_tensors="pt")
+            #     question_ids = encoded_questions.to("cuda")
+            # else:
+            #     encoded_questions = tokenizer(question_prompt,
+            #                                   max_length=4096,
+            #                                   truncation=True,
+            #                                   return_tensors="pt")
+            #     question_ids = encoded_questions.input_ids.cuda("cuda")   
             
             raw_output = model.generate(texts=question_prompt,
                                         texts_with_context=prompt,
