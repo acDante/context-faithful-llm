@@ -118,16 +118,16 @@ def main():
         sorted_sent_scores = dict(sorted(aggregated_sent_scores.items(), key=lambda x: x[1], reverse=True))
         top_k_sents = list(sorted_sent_scores.keys())[:args.num_sents]
 
-        # Save processed instances with the top K important sentences
-        processed_sample = copy.deepcopy(sample)
-        processed_sample.update({"important_sents": top_k_sents})
-        processed_samples.append(processed_sample)
-
         # For extractive CNN data: save the gold extractive summary in a readable format
         if args.dataset == "extra_cnn":
             label = sample['labels']
             annotated_sents = [article[idx] for idx in range(len(label)) if label[idx]== 1]
             processed_sample.update({"gold_extractive_summary": annotated_sents})
+        
+        # Save the top K important sentences extracted by attribution scores
+        processed_sample = copy.deepcopy(sample)
+        processed_sample.update({"important_sents": top_k_sents})
+        processed_samples.append(processed_sample)
         
         # TODO: save the generated summary
         encoded_pred = [t.id for t in res[0].target]
