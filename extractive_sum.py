@@ -59,6 +59,7 @@ def postprocess_text(preds, labels):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", default="meta-llama/Llama-2-7b-chat-hf")
+    parser.add_argument("--data_path", type=str, help="Path to the processed test data with extracted important sentences")
     parser.add_argument("--num_samples", default=2500, type=int, help="Number of test samples to evaluate on")
     parser.add_argument("--use_cad", action="store_true", help="Use context-aware decoding")
     parser.add_argument("--alpha", default=0.5, type=float, help="Parameter for context-aware decoding")
@@ -94,8 +95,11 @@ def main():
     if args.use_cad:
         model = CAD(model=base_model, tokenizer=tokenizer)
     
-    test_data = datasets.load_dataset("eReverter/cnn_dailymail_extractive", split="test")
-    test_data = test_data.select(range(min(args.num_samples, len(test_data))))  # Use the first few samples for faster iteration
+    # Load the processed test data
+    with open(args.data_path, "r") as fin:
+        test_data = json.load(fin)
+    # test_data = datasets.load_dataset("eReverter/cnn_dailymail_extractive", split="test")
+    # test_data = test_data.select(range(min(args.num_samples, len(test_data))))  # Use the first few samples for faster iteration
 
     pred_samples = []
     predictions = []
@@ -108,7 +112,8 @@ def main():
 
         doc = " ".join(article)
         summary = " ".join(highlights)
-        important_sents = [article[idx] for idx in range(len(labels)) if labels[idx]== 1]
+        # important_sents = [article[idx] for idx in range(len(labels)) if labels[idx]== 1]
+        important_sents = sample['important_sents']
         prompt = get_prompt(doc, important_sents, args.schema)
         
         # Build the input prompt

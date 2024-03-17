@@ -127,7 +127,12 @@ def main():
         if args.dataset == "extra_cnn":
             label = sample['labels']
             annotated_sents = [article[idx] for idx in range(len(label)) if label[idx]== 1]
-            processed_sample.update({"extractive_summary": annotated_sents})
+            processed_sample.update({"gold_extractive_summary": annotated_sents})
+        
+        # TODO: save the generated summary
+        encoded_pred = [t.id for t in res[0].target]
+        pred_summary = tokenizer.decode(encoded_pred, skip_special_tokens=True)
+        processed_sample.update({"generated_summary": pred_summary})
 
     # Save the processed instances to a JSON file
     save_path = Path(args.save_path)
