@@ -151,6 +151,8 @@ def main():
                                         texts_with_context=prompt,
                                         alpha=args.alpha,
                                         do_sample=False,
+                                        top_k=None,
+                                        top_p=None,
                                         max_new_tokens=128,
                                         temperature=0.0)
             output = raw_output[0]
