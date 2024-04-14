@@ -14,6 +14,16 @@ from collections import defaultdict
 import copy
 
 
+input_key = {
+    "xsum": "document",
+    "cnn_dm": "article"
+}
+
+output_key = {
+    "xsum": "summary",
+    "cnn_dm": "highlights"
+}
+
 # Check if the current token is the end of a sentence
 # Note that: this algo cannot handle the corner case with abbreviation, e.g. "P.E."
 def is_sentence_ending(text):
@@ -76,8 +86,11 @@ def main():
 
     processed_samples = []
     for idx, sample in tqdm(enumerate(test_data)):
-        article = sample['src']
-        doc = " ".join(article)
+        if args.dataset == "extra_cnn":
+            article = sample['src']
+            doc = " ".join(article)
+        else:
+            doc = sample[input_key[args.dataset]]
         prompt = f"{instruction}\n\n{doc}\n\nSummary:"
 
         # Get the attribution scores for each token in the input document

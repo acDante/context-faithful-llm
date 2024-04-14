@@ -56,6 +56,21 @@ def postprocess_text(preds, labels):
 
     return preds, labels
 
+# tokenize paragraph into sentences
+def tokenize_into_sentences(paragraph):
+    """
+    Tokenize a paragraph into sentences using NLTK's sent_tokenize function.
+    
+    Parameters:
+    paragraph (str): The input paragraph to be tokenized.
+    
+    Returns:
+    list: A list of sentences extracted from the paragraph.
+    """
+    from nltk.tokenize import sent_tokenize
+    sentences = sent_tokenize(paragraph)
+    return sentences
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", default="meta-llama/Llama-2-7b-chat-hf")
@@ -98,6 +113,7 @@ def main():
     # Load the processed test data
     with open(args.data_path, "r") as fin:
         test_data = json.load(fin)
+        test_data = test_data[:args.num_samples]
     # test_data = datasets.load_dataset("eReverter/cnn_dailymail_extractive", split="test")
     # test_data = test_data.select(range(min(args.num_samples, len(test_data))))  # Use the first few samples for faster iteration
 

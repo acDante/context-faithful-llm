@@ -10,15 +10,32 @@ from pathlib import Path
 from tqdm import tqdm
 import nltk
 
+
+def mean_score(scores):
+    return sum(scores) / len(scores)
+
 def eval_rouge_scores(preds, labels):
+    rouge = evaluate.load('rouge')
     processed_preds, processed_labels = postprocess_text(preds, labels)
     rouge_scores = rouge.compute(predictions=processed_preds,
                                  references=processed_labels)
-    
     metrics = {
         'rouge1': rouge_scores['rouge1'],
         'rouge2': rouge_scores['rouge2'],
         'rougeLsum': rouge_scores['rougeLsum']
+    }
+
+    return metrics
+
+def eval_bert_scores(preds, labels):
+    bert_score = evaluate.load('bertscore')
+    bert_score_res = bert_score.compute(predictions=preds, 
+                                        references=labels, 
+                                        model_type="microsoft/deberta-xlarge-mnli", lang="en")
+    metrics = {
+        'bertscore_p': mean_score(bert_score_res['precision']),
+        'bertscore_r': mean_score(bert_score_res['recall']),
+        'bertscore_f1': mean_score(bert_score_res['f1']),
     }
 
     return metrics
@@ -69,12 +86,40 @@ if __name__ == "__main__":
 
     # Compute the ROUGE scores by comparing the abstractive summary and two extractive summaries
     rouge = evaluate.load('rouge')
-    ref_metrics = eval_rouge_scores(extra_references, abs_references)
-    metrics = eval_rouge_scores(extra_preds, abs_references)
+    ref_rouge_metrics = eval_rouge_scores(extra_references, abs_references)
+    rouge_metrics = eval_rouge_scores(extra_preds, abs_references)
 
     # Print the ROUGE scores
     print("ROUGE scores for the reference extractive summary:")
-    print_metrics(ref_metrics)
+    print_metrics(ref_rouge_metrics)
 
     print("ROUGE scores for the predicted extractive summary:")
-    print_metrics(metrics)
+    print_metrics(rouge_metrics)
+
+    # Print the BERT scores
+    ref_bert_score_metrics = eval_bert_scores(extra_references, abs_references)
+    bert_score_metrics = eval_bert_scores(extra_preds, abs_references)
+
+    print("BERT scores for the reference extractive summary:")
+    print_metrics(ref_bert_score_metrics)
+
+    print("BERT scores for the predicted extractive summary:")
+    print_metrics(bert_score_metrics)
+
+    # Compute the average sentence-level precision
+    # i.e. the percentage of sentences in the predicted summary that are present in the gold summary
+    precision = []
+    recall = []
+    for idx, sample in tqdm(enumerate(data)):
+        reference = sample['extractive_summary']
+        pred = sample['important_sents']
+        count = 0
+        for sent in pred:
+            if sent in reference:
+                count += 1
+        precision.append(count / len(pred))
+        recall.append(count / len(reference))
+    
+    print(f"Average sentence-level precision: {mean_score(precision):.4f}")
+    print(f"Average sentence-level recall: {mean_score(recall):.4f}")
+            
