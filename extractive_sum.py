@@ -15,6 +15,16 @@ from metrics import mean_score
 from cad import CAD
 
 
+input_key = {
+    "xsum": "document",
+    "cnn_dm": "article"
+}
+
+output_key = {
+    "xsum": "summary",
+    "cnn_dm": "highlights"
+}
+
 def get_prompt(doc, important_sents, schema):
     # Prompt format: instruction + doc + important sentences
     prompt = ""
@@ -74,6 +84,7 @@ def tokenize_into_sentences(paragraph):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", default="meta-llama/Llama-2-7b-chat-hf")
+    parser.add_argument("--dataset", type=str, default="extra_cnn", help="name of the dataset to evaluate on")
     parser.add_argument("--data_path", type=str, help="Path to the processed test data with extracted important sentences")
     parser.add_argument("--num_samples", default=2500, type=int, help="Number of test samples to evaluate on")
     parser.add_argument("--use_cad", action="store_true", help="Use context-aware decoding")
@@ -122,12 +133,17 @@ def main():
     references = []
 
     for idx, sample in tqdm(enumerate(test_data)):
-        article = sample['src']
-        highlights = sample['tgt']  # reference summary
-        labels = sample['labels']  # annotated extractive summary
+        if args.dataset == "extra_cnn":
+            article = sample['src']
+            doc = " ".join(article)
 
-        doc = " ".join(article)
-        summary = " ".join(highlights)
+            highlights = sample['tgt']
+            summary = " ".join(highlights)
+        
+        else:
+            doc = sample[input_key[args.dataset]]
+            summary = sample[output_key[args.dataset]]
+
         # important_sents = [article[idx] for idx in range(len(labels)) if labels[idx]== 1]
         important_sents = sample['important_sents']
         prompt = get_prompt(doc, important_sents, args.schema)
