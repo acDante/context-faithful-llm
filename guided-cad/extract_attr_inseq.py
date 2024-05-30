@@ -82,9 +82,9 @@ def main():
                                     getattr(config, 'n_positions', None))
 
     model = AutoModelForCausalLM.from_pretrained(model_name, 
-                                                torch_dtype=torch.bfloat16, 
-                                                use_auth_token=True,
-                                                cache_dir="/mnt/ssd/llms").cuda()
+                                                 torch_dtype=torch.bfloat16, 
+                                                 use_auth_token=True,
+                                                 cache_dir="/mnt/ssd/llms").cuda()
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.model_max_length = context_window_length
 
@@ -97,7 +97,7 @@ def main():
         else:
             doc = sample[input_key[args.dataset]]
 
-        instruction = "Summarise the document below:"
+        instruction = "Summarise the document below:"  # TODO: this prompt does not work well for Llama2-chat model
         prompt_message = f"{instruction}\n{doc}"  # Note: adding a newline character can change the attribution distribution
         messages = [{
             "role": "user", 
@@ -105,23 +105,23 @@ def main():
         }]
 
         prompt = tokenizer.apply_chat_template(messages, 
-                                            return_tensors="pt", 
-                                            add_generation_prompt=True).to("cuda")
+                                               return_tensors="pt", 
+                                               add_generation_prompt=True).to("cuda")
         prompt_text = tokenizer.apply_chat_template(messages,
                                                     tokenize=False,
                                                     add_generation_prompt=True)
 
-        inseq_model = inseq.load_model(model, "attention", tokenizer=model_name)
+        inseq_model = inseq.load_model(model, args.attribution, tokenizer=model_name)
         output_ids = model.generate(prompt,
                                     do_sample=False,
                                     max_new_tokens=64,
                                     temperature=0.0)
 
         output_text = tokenizer.decode(output_ids[0, prompt.shape[1]:], skip_special_tokens=False)
-        output_text = output_text.split('.')[0] + "."  # Note: only keep the first sentence for debugging; for summarisaiton task: keep until \n\n or the last complete sentence [TODO]
+        output_text = output_text.split('.')[0] + "."  # Note: we only keep the first sentence (for testing on XSum); for general summarisaiton task: keep all the content before \n\n or until the last complete sentence [TODO]
         # output_text = tokenizer.decode(output_ids[0, prompt.shape[1]:], skip_special_tokens=True)
 
-        print(output_text)
+        # print(output_text)
         out = inseq_model.attribute(
             input_texts=prompt_text,
             generated_texts=prompt_text + output_text,
@@ -156,7 +156,7 @@ def main():
             if span[0] + 1 < span[1]:
                 processed_spans.append(span)
         
-        print(processed_spans)
+        # print(processed_spans)
         res = out.aggregate("spans", target_spans=processed_spans)
         # res.show()
 
@@ -180,7 +180,7 @@ def main():
 
         # Extract top K important sentences
         sorted_sent_scores = dict(sorted(sent_scores.items(), key=lambda x: x[1], reverse=True))
-        top_k_sents = list(sorted_sent_scores.keys())[:3]
+        top_k_sents = list(sorted_sent_scores.keys())[:args.num_sents]
 
         attributed_sents = []
         for sent in top_k_sents:
@@ -189,7 +189,7 @@ def main():
                     "input_sequence": sent,
                     "score": sent_scores[sent]
                 }
-            )
+            )  # TODO: also store the index of sentences in the document? 
         
         processed_sample = copy.deepcopy(sample)
         # For extractive CNN data: save the gold extractive summary in a readable format

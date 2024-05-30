@@ -4,7 +4,7 @@
 source ~/.bashrc
 conda activate inseq
 
-attribution_methods=("attention" "saliency")
+attribution_methods=("attention")
 # attribution_methods=("deeplift" "gradient_shap") 
 
 for attribution_method in "${attribution_methods[@]}"
