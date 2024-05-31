@@ -82,15 +82,21 @@ def main():
                                     getattr(config, 'n_positions', None))
 
     model = AutoModelForCausalLM.from_pretrained(model_name, 
-                                                 torch_dtype=torch.bfloat16, 
+                                                 torch_dtype=torch.bfloat16,
+                                                 device_map="auto",
                                                  use_auth_token=True,
-                                                 cache_dir="/mnt/ssd/llms").cuda()
+                                                 cache_dir="/mnt/ssd/llms")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.model_max_length = context_window_length
 
     ### Compute the attribution for each instance
     processed_samples = []
+    save_path = Path(args.save_path)
+    with open(save_path, "w"):
+        pass
+
     for idx, sample in tqdm(enumerate(test_data)):
+            
         if args.dataset == "extra_cnn":
             article = sample['src']
             doc = " ".join(article)
@@ -106,7 +112,16 @@ def main():
 
         prompt = tokenizer.apply_chat_template(messages, 
                                                return_tensors="pt", 
-                                               add_generation_prompt=True).to("cuda")
+                                               add_generation_prompt=True).to(model.device)
+        # Note: long context (>2500 tokens) will cause CUDA out of memory issue when running model.attribute()
+        # Here we skip those long instances
+        if prompt.shape[-1] > 2000:
+            processed_sample = copy.deepcopy(sample)
+            processed_sample.update({"attributed_sents": None})
+            processed_sample.update({"generated_summary": output_text})
+            processed_samples.append(processed_sample)
+            continue
+
         prompt_text = tokenizer.apply_chat_template(messages,
                                                     tokenize=False,
                                                     add_generation_prompt=True)
@@ -131,7 +146,7 @@ def main():
 
         ### Aggregate the attribution scores for each input sentence
         # Process intrucitons and special tokens in chat template separately
-        start_marker = "<s>[INST]"
+        start_marker = "<s><s>[INST]"
         end_marker = "[/INST]"
 
         # Calculate the token length for each part of the prompt
@@ -167,7 +182,7 @@ def main():
         input_sequences = [clean_token(t.token) for t in tok_out[0].target[2:prompt_last_index-1]]  # Note: ignore the special tokens and instruction prompt
         cleaned_sequences = []
         for seq in input_sequences:
-            processed_seq = seq.replace("<0x0A>", "").strip()
+            processed_seq = seq.replace("<0x0A>", " ").strip()
             cleaned_sequences.append(processed_seq)
 
         attr_scores = tok_out[0].target_attributions[2:prompt_last_index-1].tolist()
@@ -204,11 +219,17 @@ def main():
         # Save the generated summary
         processed_sample.update({"generated_summary": output_text})
         processed_samples.append(processed_sample)
+
+        if idx % 100 == 0:
+            print(f"Currently processing: {idx}-th sample")
+            with open(args.save_path, 'a') as fh:
+                json.dump(processed_samples, fh, indent=4)
+            processed_samples = []
     
     # Save the processed instances to a JSON file
-    save_path = Path(args.save_path)
-    with open(save_path, 'w') as fh:
-        json.dump(processed_samples, fh, indent=4)
+    # save_path = Path(args.save_path)
+    # with open(save_path, 'w') as fh:
+    #     json.dump(processed_samples, fh, indent=4)
 
 
 if __name__ == "__main__":
