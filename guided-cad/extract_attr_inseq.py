@@ -113,20 +113,12 @@ def main():
         prompt = tokenizer.apply_chat_template(messages, 
                                                return_tensors="pt", 
                                                add_generation_prompt=True).to(model.device)
-        # Note: long context (>2500 tokens) will cause CUDA out of memory issue when running model.attribute()
-        # Here we skip those long instances
-        if prompt.shape[-1] > 2000:
-            processed_sample = copy.deepcopy(sample)
-            processed_sample.update({"attributed_sents": None})
-            processed_sample.update({"generated_summary": output_text})
-            processed_samples.append(processed_sample)
-            continue
-
+        
         prompt_text = tokenizer.apply_chat_template(messages,
                                                     tokenize=False,
                                                     add_generation_prompt=True)
 
-        inseq_model = inseq.load_model(model, args.attribution, tokenizer=model_name)
+        inseq_model = inseq.load_model(model, args.attribution, tokenizer=model_name)  # >>>>>>> [TODO] update the attribution code and re-run experiments, check test_multigpu.ipynb <<<<<<<<<<
         output_ids = model.generate(prompt,
                                     do_sample=False,
                                     max_new_tokens=64,
@@ -135,6 +127,15 @@ def main():
         output_text = tokenizer.decode(output_ids[0, prompt.shape[1]:], skip_special_tokens=False)
         output_text = output_text.split('.')[0] + "."  # Note: we only keep the first sentence (for testing on XSum); for general summarisaiton task: keep all the content before \n\n or until the last complete sentence [TODO]
         # output_text = tokenizer.decode(output_ids[0, prompt.shape[1]:], skip_special_tokens=True)
+
+        # Note: long context (>2500 tokens) will cause CUDA out of memory issue when running model.attribute()
+        # Here we skip those long instances
+        if prompt.shape[-1] >= 2500:
+            processed_sample = copy.deepcopy(sample)
+            processed_sample.update({"attributed_sents": None})
+            processed_sample.update({"generated_summary": output_text})
+            processed_samples.append(processed_sample)
+            continue
 
         # print(output_text)
         out = inseq_model.attribute(
@@ -226,11 +227,15 @@ def main():
                 json.dump(processed_samples, fh, indent=4)
             processed_samples = []
     
+    # Remember to store the remaining predictions!
+    if len(processed_samples) > 0:
+        with open(args.save_path, 'a') as fh:
+            json.dump(processed_samples, fh, indent=4)
+        
     # Save the processed instances to a JSON file
     # save_path = Path(args.save_path)
     # with open(save_path, 'w') as fh:
     #     json.dump(processed_samples, fh, indent=4)
-
 
 if __name__ == "__main__":
     main()

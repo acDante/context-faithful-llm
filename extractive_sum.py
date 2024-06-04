@@ -2,8 +2,9 @@
 
 import torch
 import torch.nn as nn
-from transformers import AutoModelForCausalLM, AutoModelForSequenceClassification, AutoTokenizer
-import datasets
+from transformers import AutoModelForCausalLM, AutoModelForSequenceClassification, AutoTokenizer, AutoModelForSeq2SeqLM
+from transformers import T5Tokenizer, T5ForConditionalGeneration
+from datasets import load_dataset
 import evaluate
 import json
 import argparse
@@ -85,7 +86,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", default="meta-llama/Llama-2-7b-chat-hf")
     parser.add_argument("--dataset", type=str, default="extra_cnn", help="name of the dataset to evaluate on")
-    parser.add_argument("--data_path", type=str, help="Path to the processed test data with extracted important sentences")
+    parser.add_argument("--data_path", type=str, default=None, help="Path to the processed test data with extracted important sentences")
     parser.add_argument("--num_samples", default=2500, type=int, help="Number of test samples to evaluate on")
     parser.add_argument("--use_cad", action="store_true", help="Use context-aware decoding")
     parser.add_argument("--alpha", default=0.5, type=float, help="Parameter for context-aware decoding")
@@ -104,10 +105,12 @@ def main():
     # download_path = "/home/hpcdu1/experiments/huggingface-hub"
 
     model_name = args.model_name
-    base_model = AutoModelForCausalLM.from_pretrained(model_name,
-                                                      device_map='auto',
-                                                      torch_dtype=torch.bfloat16,
-                                                      token=access_token)
+    base_model = T5ForConditionalGeneration.from_pretrained(model_name, device_map="auto") # for flan-t5-base model
+
+    # base_model = AutoModelForCausalLM.from_pretrained(model_name,
+    #                                                   device_map='auto',
+    #                                                   torch_dtype=torch.bfloat16,
+    #                                                   token=access_token)
 
     tokenizer = AutoTokenizer.from_pretrained(model_name,
                                               use_fast=True,
@@ -122,9 +125,13 @@ def main():
         model = CAD(model=base_model, tokenizer=tokenizer)
     
     # Load the processed test data
-    with open(args.data_path, "r") as fin:
-        test_data = json.load(fin)
-        test_data = test_data[:args.num_samples]
+    if args.data_path:
+        with open(args.data_path, "r") as fin:
+            test_data = json.load(fin)
+            test_data = test_data[:args.num_samples]
+    else:
+        test_data = load_dataset(args.dataset, split="test")
+        test_data = test_data.select(range(min(args.num_samples, len(test_data))))
     # test_data = datasets.load_dataset("eReverter/cnn_dailymail_extractive", split="test")
     # test_data = test_data.select(range(min(args.num_samples, len(test_data))))  # Use the first few samples for faster iteration
 
@@ -145,7 +152,10 @@ def main():
             summary = sample[output_key[args.dataset]]
 
         # important_sents = [article[idx] for idx in range(len(labels)) if labels[idx]== 1]
-        important_sents = sample['important_sents']
+        if 'important_sents' in sample.keys():
+            important_sents = sample['important_sents']
+        else:
+            important_sents = None
         prompt = get_prompt(doc, important_sents, args.schema)
         
         # Build the input prompt
@@ -157,8 +167,11 @@ def main():
             input_ids = inputs.to("cuda")
         
         else:
+            # inputs = tokenizer(prompt,
+            #                    max_length=4096,
+            #                    truncation=True,
+            #                    return_tensors="pt")
             inputs = tokenizer(prompt,
-                               max_length=4096,
                                truncation=True,
                                return_tensors="pt")
             input_ids = inputs.input_ids.cuda("cuda")
@@ -194,16 +207,19 @@ def main():
                                      max_new_tokens=128,
                                      temperature=0.0)
             
-            raw_output = tokenizer.decode(outputs[0, input_ids.shape[1]:], skip_special_tokens=True)
+            raw_output =tokenizer.decode(outputs[0], skip_special_tokens=True)
+            # raw_output = tokenizer.decode(outputs[0, input_ids.shape[1]:], skip_special_tokens=True)
             output = raw_output
+        
+        output = output.split('.')[0] + "."
         
         predictions.append(output)
         references.append(summary)
 
         # Save predictions to file
         pred_sample = dict()
-        pred_sample['article'] = doc
-        pred_sample['highlights'] = summary
+        pred_sample['doc'] = doc
+        pred_sample['summary'] = summary
         pred_sample['important_sents'] = important_sents
         pred_sample['prediction'] = output
         pred_samples.append(pred_sample)
