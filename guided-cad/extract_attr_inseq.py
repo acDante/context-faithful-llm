@@ -83,6 +83,18 @@ def generate(model, tokenizer, input_ids, model_name, max_new_tokens=128):
                                     eos_token_id=terminators)
     return output_ids
 
+# Post process the generated output text
+def post_process(output_text, dataset):
+    if dataset == "xsum":
+        output_text = output_text.split('.')[0] + "."
+        if "\n\n" in output_text:
+            output_text = output_text.split("\n\n")[-1]
+    
+    elif dataset == "cnn_dm":
+        output_text = output_text
+
+    return output_text
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default="xsum", type=str, choices=['cnn_dm', 'xsum', 'extra_cnn'])
@@ -167,7 +179,8 @@ def main():
         #                             temperature=0.0)
 
         output_text = tokenizer.decode(output_ids[0, prompt.shape[1]:], skip_special_tokens=False)
-        output_text = output_text.split('.')[0] + "."  # Note: we only keep the first sentence (for testing on XSum); for general summarisaiton task: keep all the content before \n\n or until the last complete sentence [TODO]
+        output_text = post_process(output_text, args.dataset)
+        # output_text = output_text.split('.')[0] + "."  # Note: we only keep the first sentence (for testing on XSum); for general summarisaiton task: keep all the content before \n\n or until the last complete sentence [TODO]
         # output_text = tokenizer.decode(output_ids[0, prompt.shape[1]:], skip_special_tokens=True)
 
         # Note: long context (>2500 tokens) will cause CUDA out of memory issue when running model.attribute()
