@@ -41,10 +41,47 @@ def get_token_length(text, tokenizer):
     
     return encoded_text.shape[-1]
 
-# Remove special characters from inseq
-def clean_token(token):
-    processed_token = token.replace("▁", " ")  
+## Remove special characters from inseq
+# Note: Treat different models in different ways
+def clean_token(token, model_name):
+    if "Mistral" in model_name:
+        processed_token = token.replace("▁", " ")
+    
+    elif "Llama-3" in model_name:
+        processed_token = token.replace("Ċ", "")
+        processed_token = processed_token.replace("Ġ", " ")
+
     return processed_token
+
+# Get the special tokens in the chat template from different model
+def get_special_tokens(model_name):
+    if "Mistral" in model_name:
+        start_marker = "<s><s>[INST]"
+        end_marker = "[/INST]"
+    elif "Llama-3" in model_name:
+        start_marker = "<|begin_of_text|><|begin_of_text|><|start_header_id|>user<|end_header_id|> "
+        end_marker = "<|start_header_id|>assistant<|end_header_id|> "
+    
+    return start_marker, end_marker
+
+# Generate the output given the model and input ids
+def generate(model, tokenizer, input_ids, model_name, max_new_tokens=128):
+    if "Mistral" in model_name:
+        output_ids = model.generate(input_ids,
+                                    do_sample=False,
+                                    max_new_tokens=max_new_tokens,
+                                    temperature=0.0)
+    elif "Llama-3" in model_name:
+        terminators = [
+            tokenizer.eos_token_id,
+            tokenizer.convert_tokens_to_ids("<|eot_id|>")
+        ]
+        output_ids = model.generate(input_ids,
+                                    do_sample=False,
+                                    max_new_tokens=max_new_tokens,
+                                    temperature=0.0,
+                                    eos_token_id=terminators)
+    return output_ids
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -103,7 +140,11 @@ def main():
         else:
             doc = sample[input_key[args.dataset]]
 
-        instruction = "Summarise the document below:"  # TODO: this prompt does not work well for Llama2-chat model
+        if args.dataset == "xsum":
+            instruction = "Summarise the document below in one sentence:"
+        elif args.dataset == "cnn_dm":
+            instruction = "Summarise the document below:"  # TODO: this prompt does not work well for Llama2-chat model
+        
         prompt_message = f"{instruction}\n{doc}"  # Note: adding a newline character can change the attribution distribution
         messages = [{
             "role": "user", 
@@ -119,10 +160,11 @@ def main():
                                                     add_generation_prompt=True)
 
         inseq_model = inseq.load_model(model, args.attribution, tokenizer=model_name)  # >>>>>>> [TODO] update the attribution code and re-run experiments, check test_multigpu.ipynb <<<<<<<<<<
-        output_ids = model.generate(prompt,
-                                    do_sample=False,
-                                    max_new_tokens=64,
-                                    temperature=0.0)
+        output_ids = generate(model, tokenizer, prompt, model_name, max_new_tokens=128)
+        # output_ids = model.generate(prompt,
+        #                             do_sample=False,
+        #                             max_new_tokens=128,
+        #                             temperature=0.0)
 
         output_text = tokenizer.decode(output_ids[0, prompt.shape[1]:], skip_special_tokens=False)
         output_text = output_text.split('.')[0] + "."  # Note: we only keep the first sentence (for testing on XSum); for general summarisaiton task: keep all the content before \n\n or until the last complete sentence [TODO]
@@ -147,8 +189,7 @@ def main():
 
         ### Aggregate the attribution scores for each input sentence
         # Process intrucitons and special tokens in chat template separately
-        start_marker = "<s><s>[INST]"
-        end_marker = "[/INST]"
+        start_marker, end_marker = get_special_tokens(model_name)
 
         # Calculate the token length for each part of the prompt
         len_start_marker = get_token_length(start_marker, tokenizer)
@@ -162,8 +203,8 @@ def main():
         instr_span = (len_start_marker, len_start_marker + len_instruction)
         end_span = (total_prompt_len, total_prompt_len + len_end_marker)
 
-        ends = [i + 1 for i, t in enumerate(out[0].target) if is_sentence_ending(t.token) and i < total_prompt_len] + [total_prompt_len]
-        starts = [doc_start_pos] + [i + 1 for i, t in enumerate(out[0].target) if is_sentence_ending(t.token) and i < total_prompt_len]
+        ends = [i + 1 for i, t in enumerate(out[0].target) if is_sentence_ending(clean_token(t.token, model_name)) and i < total_prompt_len] + [total_prompt_len]
+        starts = [doc_start_pos] + [i + 1 for i, t in enumerate(out[0].target) if is_sentence_ending(clean_token(t.token, model_name)) and i < total_prompt_len]
         spans = [start_span, instr_span] + list(zip(starts, ends)) + [end_span]
 
         # Remove invalid spans 
@@ -180,11 +221,14 @@ def main():
         tok_out = res.aggregate()
         prompt_last_index = tok_out[0].attr_pos_start
 
-        input_sequences = [clean_token(t.token) for t in tok_out[0].target[2:prompt_last_index-1]]  # Note: ignore the special tokens and instruction prompt
+        input_sequences = [clean_token(t.token, model_name) for t in tok_out[0].target[2:prompt_last_index-1]]  # Note: ignore the special tokens and instruction prompt
         cleaned_sequences = []
-        for seq in input_sequences:
-            processed_seq = seq.replace("<0x0A>", " ").strip()
-            cleaned_sequences.append(processed_seq)
+        if "Mistral" in model_name:
+            for seq in input_sequences:
+                processed_seq = seq.replace("<0x0A>", " ").strip()
+                cleaned_sequences.append(processed_seq)
+        else:
+            cleaned_sequences = input_sequences
 
         attr_scores = tok_out[0].target_attributions[2:prompt_last_index-1].tolist()
         assert(len(cleaned_sequences) == len(attr_scores))
@@ -221,21 +265,21 @@ def main():
         processed_sample.update({"generated_summary": output_text})
         processed_samples.append(processed_sample)
 
-        if idx % 100 == 0:
-            print(f"Currently processing: {idx}-th sample")
-            with open(args.save_path, 'a') as fh:
-                json.dump(processed_samples, fh, indent=4)
-            processed_samples = []
+        # if idx % 100 == 0:
+        #     print(f"Currently processing: {idx}-th sample")
+        #     with open(args.save_path, 'a') as fh:
+        #         json.dump(processed_samples, fh, indent=4)
+        #     processed_samples = []
     
     # Remember to store the remaining predictions!
-    if len(processed_samples) > 0:
-        with open(args.save_path, 'a') as fh:
-            json.dump(processed_samples, fh, indent=4)
+    # if len(processed_samples) > 0:
+    #     with open(args.save_path, 'a') as fh:
+    #         json.dump(processed_samples, fh, indent=4)
         
     # Save the processed instances to a JSON file
-    # save_path = Path(args.save_path)
-    # with open(save_path, 'w') as fh:
-    #     json.dump(processed_samples, fh, indent=4)
+    save_path = Path(args.save_path)
+    with open(save_path, 'w') as fh:
+        json.dump(processed_samples, fh, indent=4)
 
 if __name__ == "__main__":
     main()
