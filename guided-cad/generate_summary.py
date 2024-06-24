@@ -11,6 +11,17 @@ import copy
 
 from cad import CAD
 
+
+input_key = {
+    "xsum": "document",
+    "cnn_dm": "article"
+}
+
+output_key = {
+    "xsum": "summary",
+    "cnn_dm": "highlights"
+}
+
 def get_prompt(doc, important_sents, schema, dataset):
     prompt = ""
     if schema == "base":
@@ -187,8 +198,9 @@ def main():
     processed_samples = []
     for idx, sample in tqdm(enumerate(test_data)):
         # TODO: deal with the case when attribution is None (skip those data)
-        doc = sample['document']
-        summary = sample['summary']
+        doc = sample[input_key[args.dataset]]
+        # doc = sample['document']
+        # summary = sample['summary']
 
         if "attributed_sents" in sample.keys():
             if sample['attributed_sents'] == None:
