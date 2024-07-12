@@ -17,12 +17,14 @@ import copy
 
 input_key = {
     "xsum": "document",
-    "cnn_dm": "article"
+    "cnn_dm": "article",
+    "ccsum": "article"
 }
 
 output_key = {
     "xsum": "summary",
-    "cnn_dm": "highlights"
+    "cnn_dm": "highlights",
+    "ccsum": "summary"
 }
 
 # Check if the current token is the end of a sentence
@@ -92,12 +94,16 @@ def post_process(output_text, dataset):
     
     elif dataset == "cnn_dm":
         output_text = output_text
+    
+    if dataset == "ccsum":
+        if "</s>" in output_text:
+            output_text = output_text.split("</s>")[0]
 
     return output_text
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", default="xsum", type=str, choices=['cnn_dm', 'xsum', 'extra_cnn'])
+    parser.add_argument("--dataset", default="xsum", type=str, choices=['cnn_dm', 'xsum', 'extra_cnn', 'ccsum'])
     parser.add_argument("--model_name", default="mistralai/Mistral-7B-Instruct-v0.2")
     parser.add_argument("--attribution", default="attention", type=str, help="Type of attribution method to use")
     parser.add_argument("--num_samples", default=2500, type=int, help="Number of test instances to processs")
@@ -121,6 +127,11 @@ def main():
         test_data = load_dataset('cnn_dailymail', '3.0.0', split='test')
     elif args.dataset == 'xsum':
         test_data = load_dataset("xsum", split="test")
+    elif args.dataset == "ccsum":
+        # load CCSum test data (abstractive subset)
+        ccsum_dataset = load_dataset("/mnt/ceph_rbd/datasets/ccsum")
+        dataset_abstractive = ccsum_dataset.filter(lambda x: x["abstractiveness_bin"] == "high")
+        test_data = dataset_abstractive['test']
     
     test_data = test_data.select(range(min(args.num_samples, len(test_data))))
 
@@ -134,7 +145,7 @@ def main():
                                                  torch_dtype=torch.bfloat16,
                                                  device_map="auto",
                                                  use_auth_token=True,
-                                                 cache_dir="/mnt/ssd/llms")
+                                                 cache_dir="/mnt/ceph_rbd/llms")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.model_max_length = context_window_length
 
@@ -156,7 +167,9 @@ def main():
             instruction = "Summarise the document below in one sentence:"
         elif args.dataset == "cnn_dm":
             instruction = "Summarise the document below:"  # TODO: this prompt does not work well for Llama2-chat model
-        
+        elif args.dataset == "ccsum":
+            instruction = "Summarise the document below in one sentence or two sentences:"
+
         prompt_message = f"{instruction}\n{doc}"  # Note: adding a newline character can change the attribution distribution
         messages = [{
             "role": "user", 
@@ -185,12 +198,14 @@ def main():
 
         # Note: long context (>2500 tokens) will cause CUDA out of memory issue when running model.attribute()
         # Here we skip those long instances
-        if prompt.shape[-1] >= 2500:
-            processed_sample = copy.deepcopy(sample)
-            processed_sample.update({"attributed_sents": None})
-            processed_sample.update({"generated_summary": output_text})
-            processed_samples.append(processed_sample)
-            continue
+
+        # CCSum does not need this filtering, uncomment these lines for XSum and CNN/DM
+        # if prompt.shape[-1] >= 2500: 
+        #     processed_sample = copy.deepcopy(sample)
+        #     processed_sample.update({"attributed_sents": None})
+        #     processed_sample.update({"generated_summary": output_text})
+        #     processed_samples.append(processed_sample)
+        #     continue
 
         # print(output_text)
         out = inseq_model.attribute(
@@ -264,7 +279,12 @@ def main():
                 }
             )  # TODO: also store the index of sentences in the document? 
         
-        processed_sample = copy.deepcopy(sample)
+        processed_sample = dict()
+        processed_sample['article'] = doc
+        processed_sample['summary'] = sample[output_key[args.dataset]]
+        processed_sample['id'] = sample['id']
+        # processed_sample = copy.deepcopy(sample)  # This line causes problems for CCSum
+
         # For extractive CNN data: save the gold extractive summary in a readable format
         if args.dataset == "extra_cnn":
             label = sample['labels']

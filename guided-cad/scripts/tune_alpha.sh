@@ -11,9 +11,9 @@ for alpha in "${alpha_values[@]}"; do
     echo "Running attribution-guided contrastive decoding with --alpha=${alpha}"
     python generate_summary.py --model_name meta-llama/Meta-Llama-3-8B-Instruct \
                                --dataset xsum \
-                               --attr_data_path results/xsum-llama3-8b-attention-1000.json \
+                               --attr_data_path results/xsum-llama3-8b-saliency-1000.json \
                                --num_samples 1000 \
-                               --exp_name xsum-llama3-8b-attention-impt+cad-alpha_${alpha} \
+                               --exp_name xsum-llama3-8b-saliency-impt+cad-alpha_${alpha} \
                                --schema base+impt --use_cad --alpha ${alpha}
 done
 
