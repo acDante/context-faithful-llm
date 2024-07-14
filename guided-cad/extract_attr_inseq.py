@@ -89,15 +89,16 @@ def generate(model, tokenizer, input_ids, model_name, max_new_tokens=128):
 def post_process(output_text, dataset):
     if dataset == "xsum":
         output_text = output_text.split('.')[0] + "."
-        if "\n\n" in output_text:
+        if "\n\n" in output_text:  # TODO: 这里处理有点问题，不应该去掉前面的提示词
             output_text = output_text.split("\n\n")[-1]
     
     elif dataset == "cnn_dm":
         output_text = output_text
     
     if dataset == "ccsum":
-        if "</s>" in output_text:
-            output_text = output_text.split("</s>")[0]
+        output_text = output_text
+        # if "</s>" in output_text:
+        #     output_text = output_text.split("</s>")[0]
 
     return output_text
 
@@ -156,7 +157,9 @@ def main():
         pass
 
     for idx, sample in tqdm(enumerate(test_data)):
-            
+        if idx % 100 == 0:
+            print(f"Currently processing: {idx}-th sample.\n")
+
         if args.dataset == "extra_cnn":
             article = sample['src']
             doc = " ".join(article)
