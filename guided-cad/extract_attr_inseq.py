@@ -97,8 +97,8 @@ def post_process(output_text, dataset):
     
     if dataset == "ccsum":
         output_text = output_text
-        # if "</s>" in output_text:
-        #     output_text = output_text.split("</s>")[0]
+        # if "\n\n" in output_text:
+        #     output_text = output_text.split("\n\n")[-1]
 
     return output_text
 
