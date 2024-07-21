@@ -58,7 +58,21 @@ def get_prompt(doc, important_sents, schema, dataset):
         
         for id, sent in enumerate(important_sents):
             prompt += f"{str(id + 1)}. {sent}\n"
+    
+    # New contrastive setting: input document + important sentences v.s. prompt
+    elif schema == "base+impt_v2":
+        if dataset == "xsum":
+            instruction = "Summarise the document below in one sentence:"
+        elif dataset == "cnn_dm":
+            instruction = "Summarise the document below:"
+        elif dataset == "ccsum":
+            instruction = "Summarise the document below in one sentence or two sentences:"
+        
+        prompt = f"{instruction}\n{doc}\n\nYou should pay attention to the following main points:\n"  # TODO: try subtracting these sentences from the input doc?
+        for id, sent in enumerate(important_sents):
+            prompt += f"{str(id + 1)}. {sent}\n"  # TODO: try list important sentences according to their original order
 
+        prompt += "\nSummary:"
     return prompt
 
 def get_question_prompt(doc, schema, dataset):
@@ -75,6 +89,9 @@ def get_question_prompt(doc, schema, dataset):
             instruction = "Summarise the document below in one sentence or two sentences:"
         
         prompt = f"{instruction}\n{doc}"
+    
+    elif schema == "base+impt_v2":
+        prompt = "Summary:"
     
     return prompt
 
@@ -173,7 +190,7 @@ def parse_args():
     parser.add_argument("--num_samples", default=2500, type=int, help="Number of test samples to evaluate on")
     parser.add_argument("--log_path", default="results/summary", type=str)
     parser.add_argument("--exp_name", type=str, help="Experiment name")
-    parser.add_argument("--schema", default="base", type=str, choices=['base', 'base+impt', 'impt_only'],
+    parser.add_argument("--schema", default="base", type=str, choices=['base', 'base+impt', 'impt_only', "base+impt_v2"],
                         help="whether to include important sentences in the prompt")
     parser.add_argument("--use_cad", action="store_true", help="Use context-aware decoding")
     parser.add_argument("--alpha", default=0.5, type=float, help="Parameter for context-aware decoding")
