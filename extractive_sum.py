@@ -105,12 +105,12 @@ def main():
     # download_path = "/home/hpcdu1/experiments/huggingface-hub"
 
     model_name = args.model_name
-    base_model = T5ForConditionalGeneration.from_pretrained(model_name, device_map="auto") # for flan-t5-base model
+    # base_model = T5ForConditionalGeneration.from_pretrained(model_name, device_map="auto") # for flan-t5-base model
 
-    # base_model = AutoModelForCausalLM.from_pretrained(model_name,
-    #                                                   device_map='auto',
-    #                                                   torch_dtype=torch.bfloat16,
-    #                                                   token=access_token)
+    base_model = AutoModelForCausalLM.from_pretrained(model_name,
+                                                      device_map='auto',
+                                                      torch_dtype=torch.bfloat16,
+                                                      token=access_token)
 
     tokenizer = AutoTokenizer.from_pretrained(model_name,
                                               use_fast=True,

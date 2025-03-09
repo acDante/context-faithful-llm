@@ -216,6 +216,7 @@ def main():
                                                       torch_dtype=torch.bfloat16,
                                                       device_map="auto",
                                                       use_auth_token=True,
+                                                      attn_implementation="flash_attention_2",
                                                       cache_dir="/mnt/ceph_rbd/llms")
     tokenizer = AutoTokenizer.from_pretrained(model_name,
                                               padding_side="left")
