@@ -10,7 +10,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 def main():
-    access_token = "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"
+    access_token = "HF_TOKEN"
     # Test with extractive CNN/DM data
     test_data = datasets.load_dataset("eReverter/cnn_dailymail_extractive", split="test")
     test_data = test_data[0]
