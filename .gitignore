@@ -1,5 +1,8 @@
 .DS_Store
 __pycache__/
 datasets/
-# results/
+results/
 api_secrets.py
+evaluate/exps/
+evaluate/is_supported_factscore_caches*/
+evaluate/prefs/sent2facts_cache*.json
