@@ -103,11 +103,13 @@ if __name__ == "__main__":
 
     args = parse_args()
     # Extract short model name
-    short_model_name = args.model_name
-    if "Llama" in args.model_name:
-        short_model_name = "llama"
-    elif "Qwen" in args.model_name:
-        short_model_name = "qwen"
+    short_model_name = {
+        "meta-llama/Llama-3.1-8B-Instruct": "llama3.1-8b",
+        "meta-llama/Llama-3.3-70B-Instruct": "llama3.3-70b",
+        "Qwen/Qwen2.5-7B-Instruct": "qwen2.5-7b",
+        "Qwen/Qwen2.5-72B-Instruct-AWQ": "qwen2.5-72b",
+        "gpt-4o-mini": "gpt-4o-mini"
+    }
 
     # Model for computing Summa-C scores
     model_conv = SummaCConv(models=["vitc"], bins='percentile', granularity="sentence", nli_labels="e", device="cuda:0", start_file="default", agg="mean")
@@ -128,7 +130,7 @@ if __name__ == "__main__":
     prisma_scores = []
     
     cache_dir_prefix = os.path.join("exps", extract_filename(args.data_path))
-    cache_dir_prefix = f"{cache_dir_prefix}_{short_model_name}"
+    cache_dir_prefix = f"{cache_dir_prefix}_{short_model_name[args.model_name]}"
     if not os.path.exists(cache_dir_prefix):
         os.makedirs(cache_dir_prefix)
 
@@ -138,8 +140,8 @@ if __name__ == "__main__":
 
     for idx, sample in tqdm(enumerate(data)):
         document = sample[input_key[args.dataset]]
-        # gold_summary = sample[output_key[args.dataset]]
-        gold_summary = sample['summary']
+        gold_summary = sample[output_key[args.dataset]]
+        # gold_summary = sample['summary']
         example_output = sample['generated_summary']
 
         # Compute fact scores (TODO: debug nan, check the length/variables/fact_recall, e.g. using xsum-mistral-7b-base_preds.json)
@@ -165,7 +167,7 @@ if __name__ == "__main__":
         predictions.append(example_output)
 
     exp_dir = os.path.join("exps", extract_filename(args.data_path))
-    exp_dir = f"{exp_dir}_{short_model_name}"
+    exp_dir = f"{exp_dir}_{short_model_name[args.model_name]}"
     log_path = os.path.join(exp_dir, f"{args.metrics}.log")
     # with open(log_path, "a") as fout:
     #     fout.write(f"Currently evaluating: {args.data_path}\n")
@@ -193,6 +195,7 @@ if __name__ == "__main__":
         
         evaluation_metrics["fact_precision"] = avg_fact_score
         evaluation_metrics["prisma_score"] = avg_prisma_score
+        
 
         with open(log_path, "a") as fout:
             fout.write(json.dumps(evaluation_metrics) + "\n")

@@ -14,12 +14,12 @@ class QwenModel(object):
             torch_dtype="auto",
             device_map="auto",
             token=self.hf_token,
-            cache_dir="/mnt/ssd/llms"
+            cache_dir="/mnt/ceph_rbd/llms"
         )
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_name,
             token=self.hf_token,
-            cache_dir="/mnt/ssd/llms"
+            cache_dir="/mnt/ceph_rbd/llms"
         )
     
     def generate(self, prompt, max_output_tokens):
@@ -53,13 +53,13 @@ class QwenModel(object):
 #             device_map="auto", 
 #             torch_dtype=torch.bfloat16, 
 #             quantization_config=quantization_config,
-#             cache_dir="/mnt/ssd/llms",
+#             cache_dir="/mnt/ceph_rbd/llms",
 #             token=self.hf_token
 #         )
 
 #         self.tokenizer = AutoTokenizer.from_pretrained(
 #             model_name,
-#             cache_dir="/mnt/ssd/llms",
+#             cache_dir="/mnt/ceph_rbd/llms",
 #             token=self.hf_token
 #         )
 
@@ -93,7 +93,7 @@ class LlamaModel(object):
             "text-generation",
             model=model_name,
             model_kwargs={"torch_dtype": torch.bfloat16,
-                          "cache_dir": "/mnt/ssd/llms"},
+                          "cache_dir": "/mnt/ceph_rbd/llms"},
             device_map="auto",
             token=self.hf_token
         )
