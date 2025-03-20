@@ -23,7 +23,7 @@ output_key = {
     "ccsum": "summary"
 }
 
-def load_dataset(dataset_name, split="test"):
+def load_data(dataset_name):
     if dataset_name == "extra_cnn":
         test_data = load_dataset("eReverter/cnn_dailymail_extractive", split="test")
     elif dataset_name == "cnn_dm":
@@ -46,7 +46,7 @@ def load_model(model_name, cache_dir="/mnt/ceph_rbd/llms", device="cuda"):
     model = AutoModelForCausalLM.from_pretrained(model_name,
                                                  torch_dtype=torch.bfloat16,
                                                  device_map="auto",
-                                                 cache_dir=cache_dir).to(device)
+                                                 cache_dir=cache_dir)
     
     tokenizer = AutoTokenizer.from_pretrained(model_name, 
                                               cache_dir=cache_dir)
@@ -77,14 +77,18 @@ def parse_args():
 
 def main():
     args = parse_args()
-    login("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")
+    login("HF_TOKEN")
 
     # Load the test data
     model, tokenizer = load_model(
         args.model_name, cache_dir="/mnt/ceph_rbd/llms", device="cuda"
     )
-    test_data = load_dataset(args.dataset)
+    test_data = load_data(args.dataset)
     test_data = test_data.select(range(min(args.num_samples, len(test_data))))
+    if args.dataset == "cnn_dm":
+        max_new_tokens = 256
+    else:
+        max_new_tokens = 128
 
     processed_samples = []
     for idx, sample in tqdm(enumerate(test_data)):
@@ -98,7 +102,7 @@ def main():
         cc = ContextCiter(model, tokenizer, context, query)
         cc.prompt_template = get_prompt_template(args.dataset)
         cc.generate_kwargs = {
-            "max_new_tokens": 512,
+            "max_new_tokens": max_new_tokens,
             "do_sample": False,
             "temperature": 0.0
         }

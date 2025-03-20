@@ -201,7 +201,7 @@ def parse_args():
 def main():
     
     args = parse_args()
-    login("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")
+    login("HF_TOKEN")
 
     # Load test dataset
     test_data = load_data(args)
@@ -212,12 +212,19 @@ def main():
     context_window_length = getattr(config, 'max_position_embeddings', 
                                     getattr(config, 'n_positions', None))
 
+    # base_model = AutoModelForCausalLM.from_pretrained(model_name, 
+    #                                                   torch_dtype=torch.bfloat16,
+    #                                                   device_map="auto",
+    #                                                   use_auth_token=True,
+    #                                                   attn_implementation="flash_attention_2",
+    #                                                   cache_dir="/mnt/ceph_rbd/llms")
+    
     base_model = AutoModelForCausalLM.from_pretrained(model_name, 
                                                       torch_dtype=torch.bfloat16,
                                                       device_map="auto",
                                                       use_auth_token=True,
-                                                      attn_implementation="flash_attention_2",
                                                       cache_dir="/mnt/ceph_rbd/llms")
+    
     tokenizer = AutoTokenizer.from_pretrained(model_name,
                                               padding_side="left")
     tokenizer.pad_token_id = 0 if tokenizer.pad_token_id is None else tokenizer.pad_token_id
@@ -273,11 +280,31 @@ def main():
                                        model_name=model_name, alpha=args.alpha, max_new_tokens=128)
         
         else:
-            input_ids = tokenizer.apply_chat_template(messages, 
-                                                      return_tensors="pt", 
-                                                      add_generation_prompt=True).to(model.device)
+            raw_prompt = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True
+            )
+
+            prompt_ids = tokenizer.encode(raw_prompt, add_special_tokens=False)
+
+            input_ids = torch.tensor([prompt_ids], device=model.device)
+
+            generate_kwargs = {
+                "max_new_tokens": 128,
+                "do_sample": False,
+                "temperature": 0.0
+            }
+
+            output_ids = model.generate(input_ids, **generate_kwargs)
+
+            output_text = tokenizer.decode(output_ids[0, input_ids.shape[1]:], skip_special_tokens=True)
+
+            # input_ids = tokenizer.apply_chat_template(messages, 
+            #                                           return_tensors="pt", 
+            #                                           add_generation_prompt=True).to(model.device)
             
-            output_text = generate(model, tokenizer, input_ids, model_name, max_new_tokens=128)
+            # output_text = generate(model, tokenizer, input_ids, model_name, max_new_tokens=128)
         
         output_text = post_process(output_text, args.dataset)
         # output_text = output_text.split('.')[0] + "."  # Note: we only keep the first sentence (for testing on XSum); for general summarisaiton task: keep all the content before \n\n or until the last complete sentence [TODO]
