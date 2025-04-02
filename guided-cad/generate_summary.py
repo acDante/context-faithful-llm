@@ -194,7 +194,10 @@ def parse_args():
                         help="whether to include important sentences in the prompt")
     parser.add_argument("--use_cad", action="store_true", help="Use context-aware decoding")
     parser.add_argument("--alpha", default=0.5, type=float, help="Parameter for context-aware decoding")
-    
+    parser.add_argument("--method", type=str, choices=["cad", "dola"], help="Decoding strategy to use")
+    parser.add_argument("--dola_config", type=str, default="low", choices=["low", "high"], help="DoLA configuration")
+    parser.add_argument("--max_new_tokens", default=128, type=int, help="Maximum number of tokens to generate")
+
     args = parser.parse_args()
     return args
 
@@ -223,7 +226,7 @@ def main():
                                                       torch_dtype=torch.bfloat16,
                                                       device_map="auto",
                                                       use_auth_token=True,
-                                                      cache_dir="/mnt/ceph_rbd/llms")
+                                                      cache_dir="/mnt/ssd/llms")
     
     tokenizer = AutoTokenizer.from_pretrained(model_name,
                                               padding_side="left")
@@ -233,7 +236,7 @@ def main():
 
     # Initialise the model for constrastive decoding
     model = base_model
-    if args.use_cad:
+    if args.method == "cad":
         model = CAD(model=base_model, tokenizer=tokenizer)
 
     log_path = Path(args.log_path)
@@ -260,7 +263,7 @@ def main():
             "content": prompt
         }]
         
-        if args.use_cad:
+        if args.method == "cad":
             # TODO: with v.s. without chat template?
             question_prompt = get_question_prompt(doc, args.schema, args.dataset)
             question_messages = [{
@@ -277,7 +280,29 @@ def main():
                                                         add_generation_prompt=True)
             output_text = cad_generate(model, tokenizer, 
                                        question_prompt=question_prompt_text, prompt=prompt_text, 
-                                       model_name=model_name, alpha=args.alpha, max_new_tokens=128)
+                                       model_name=model_name, alpha=args.alpha, max_new_tokens=args.max_new_tokens)
+        elif args.method == "dola":
+            raw_prompt = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True
+            )
+
+            prompt_ids = tokenizer.encode(raw_prompt, add_special_tokens=False)
+
+            input_ids = torch.tensor([prompt_ids], device=model.device)
+
+            generate_kwargs = {
+                "max_new_tokens": args.max_new_tokens,
+                "do_sample": False,
+                "temperature": 0.0,
+                "dola_layers": args.dola_config,
+                "repetition_penalty": 1.2
+            }
+
+            output_ids = model.generate(input_ids, **generate_kwargs)
+
+            output_text = tokenizer.decode(output_ids[0, input_ids.shape[1]:], skip_special_tokens=True)
         
         else:
             raw_prompt = tokenizer.apply_chat_template(
@@ -291,7 +316,7 @@ def main():
             input_ids = torch.tensor([prompt_ids], device=model.device)
 
             generate_kwargs = {
-                "max_new_tokens": 128,
+                "max_new_tokens": args.max_new_tokens,
                 "do_sample": False,
                 "temperature": 0.0
             }
