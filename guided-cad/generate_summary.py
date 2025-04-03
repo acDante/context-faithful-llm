@@ -8,6 +8,8 @@ import argparse
 from pathlib import Path
 from tqdm import tqdm
 import copy
+import nltk
+from typing import List, Dict, Tuple
 
 from cad import CAD
 
@@ -73,12 +75,32 @@ def get_prompt(doc, important_sents, schema, dataset):
             prompt += f"{str(id + 1)}. {sent}\n"  # TODO: try list important sentences according to their original order
 
         prompt += "\nSummary:"
+    
+    # New CAD setting: input document v.s. input document with masked attributed sentences
+    elif schema == "mask_impt":
+        if dataset == "xsum":
+            instruction = "Summarise the document below in one sentence:"
+        elif dataset == "cnn_dm":
+            instruction = "Summarise the document below:"
+        elif dataset == "ccsum":
+            instruction = "Summarise the document below in one sentence or two sentences:"
+
+        prompt = f"{instruction}\n{doc}"
+
     return prompt
 
-def get_question_prompt(doc, schema, dataset):
+def get_question_prompt(doc, schema, dataset, important_sents=None):
     prompt = ""
     if schema == "base":
-        prompt = "Summary:"
+        # prompt = "Summary:"
+        if dataset == "xsum":
+            instruction = "Summarise the document below in one sentence."
+        elif dataset == "cnn_dm":
+            instruction = "Summarise the document below."
+        elif dataset == "ccsum":
+            instruction = "Summarise the document below in one sentence or two sentences."
+        
+        prompt = instruction + "\nSummary:"
 
     elif schema == "base+impt":
         if dataset == "xsum":
@@ -93,6 +115,34 @@ def get_question_prompt(doc, schema, dataset):
     elif schema == "base+impt_v2":
         prompt = "Summary:"
     
+    elif schema == "mask_impt":
+        # Mask attributed sentences in the original document
+        sentences, separators = split_into_sentences(doc)
+        # Sanity check: whether the important sentences are included in the split sentences
+        for sent in important_sents:
+            if sent not in sentences:
+                print(sent)
+        
+        processed_sentences = []
+        for sent in sentences:
+            if sent in important_sents:
+                processed_sentences.append("[MASK]")
+            else:
+                processed_sentences.append(sent)
+        
+        processed_article = ""
+        for sep, sent in zip(separators, processed_sentences):
+            processed_article += sep + sent 
+        
+        if dataset == "xsum":
+            instruction = "Summarise the document below in one sentence:"
+        elif dataset == "cnn_dm":
+            instruction = "Summarise the document below:"
+        elif dataset == "ccsum":
+            instruction = "Summarise the document below in one sentence or two sentences:"
+        
+        prompt = f"{instruction}\n{processed_article}"
+        
     return prompt
 
 def load_data(args):
@@ -182,6 +232,19 @@ def post_process(output_text, dataset):
 
     return output_text
 
+def split_into_sentences(text: str) -> Tuple[List[str], List[str]]:
+    lines = text.splitlines()
+    sentences = []
+    for line in lines:
+        sentences.extend(nltk.sent_tokenize(line))
+    separators = []
+    cur_start = 0
+    for sentence in sentences:
+        cur_end = text.find(sentence, cur_start)
+        separators.append(text[cur_start:cur_end])
+        cur_start = cur_end + len(sentence)
+    return sentences, separators
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", default="mistralai/Mistral-7B-Instruct-v0.2")
@@ -190,7 +253,7 @@ def parse_args():
     parser.add_argument("--num_samples", default=2500, type=int, help="Number of test samples to evaluate on")
     parser.add_argument("--log_path", default="results/summary", type=str)
     parser.add_argument("--exp_name", type=str, help="Experiment name")
-    parser.add_argument("--schema", default="base", type=str, choices=['base', 'base+impt', 'impt_only', "base+impt_v2"],
+    parser.add_argument("--schema", default="base", type=str, choices=['base', 'base+impt', 'impt_only', "base+impt_v2", 'mask_impt'],
                         help="whether to include important sentences in the prompt")
     parser.add_argument("--use_cad", action="store_true", help="Use context-aware decoding")
     parser.add_argument("--alpha", default=0.5, type=float, help="Parameter for context-aware decoding")
@@ -265,7 +328,7 @@ def main():
         
         if args.method == "cad":
             # TODO: with v.s. without chat template?
-            question_prompt = get_question_prompt(doc, args.schema, args.dataset)
+            question_prompt = get_question_prompt(doc, args.schema, args.dataset, important_sents=attributed_sents)
             question_messages = [{
                 "role": "user",
                 "content": question_prompt
@@ -336,6 +399,9 @@ def main():
         processed_sample = copy.deepcopy(sample)
         # Save the generated summary
         processed_sample.update({"generated_summary": output_text})
+        if args.method == "cad":
+            processed_sample.update({"prompt_with_context": prompt})
+            processed_sample.update({"prompt_wo_context": question_prompt})
         processed_samples.append(processed_sample)
     
     with open(output_path, "w") as fh:
