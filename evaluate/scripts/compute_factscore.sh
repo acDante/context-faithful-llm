@@ -15,8 +15,8 @@ if [ ! -d "$DIRECTORY" ]; then
 fi
 
 JSON_FILES=(
-    "${DATASET}-${MODEL}-${ATTRIBUTION}-base_preds.json"
-    "${DATASET}-${MODEL}-${ATTRIBUTION}-impt_only_preds.json"
+    # "${DATASET}-${MODEL}-${ATTRIBUTION}-base_preds.json"
+    # "${DATASET}-${MODEL}-${ATTRIBUTION}-impt_only_preds.json"
     "${DATASET}-${MODEL}-${ATTRIBUTION}-base+impt_preds.json"
     "${DATASET}-${MODEL}-${ATTRIBUTION}-impt+cad_preds.json"
 )

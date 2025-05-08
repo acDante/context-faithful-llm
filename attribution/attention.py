@@ -43,7 +43,7 @@ def load_data(dataset_name):
     elif dataset_name == "cnn_dm":
         test_data = load_dataset('cnn_dailymail', '3.0.0', split='test')
     elif dataset_name == 'xsum':
-        test_data = load_dataset("xsum", split="test")
+        test_data = load_dataset("xsum", split="test", trust_remote_code=True)
     elif dataset_name == "ccsum":
         # load CCSum test data (abstractive subset)
         ccsum_dataset = load_dataset("/mnt/ceph_rbd/datasets/ccsum")
@@ -54,11 +54,11 @@ def load_data(dataset_name):
 
 def get_prompt_template(dataset_name):
     if dataset_name == "xsum":
-        prompt_template = "Summarise the document below in one sentence: {context}"
+        prompt_template = "Summarise the document below in one sentence:\n{context}"
     elif dataset_name == "cnn_dm":
-        prompt_template = "Summarise the document below: {context}"
+        prompt_template = "Summarise the document below:\n{context}"
     elif dataset_name == "ccsum":
-        prompt_template = "Summarise the document below in one sentence or two sentences: {context}"
+        prompt_template = "Summarise the document below in one sentence or two sentences:\n{context}"
 
     return prompt_template
 
@@ -94,6 +94,7 @@ def get_output(model, tokenizer, chat_prompt, chat_prompt_ids, max_response_toke
         input_ids=t.to(model.device),
         max_new_tokens=max_response_tokens,
         do_sample=False,
+        temperature=0.0,
     )[0]
     # We take the original prompt because sometimes encoding and decoding changes it
     raw_output = tokenizer.decode(output_ids)
@@ -224,7 +225,7 @@ def main():
 
     # TODO: Add the main function (check: inseq_attention_llama3.1.ipynb) 
     # TODO: double check the hyperparameters (e.g. max_new_tokens, prompt format, make sure you use the right arguments when calling each utility function)
-    model, tokenizer = load_model_and_tokenzier(model_name=args.model_name, cache_dir="/mnt/ssd/llms")
+    model, tokenizer = load_model_and_tokenzier(model_name=args.model_name, cache_dir="/mnt/ceph_rbd/llms")
     test_data = load_data(args.dataset)
     test_data = test_data.select(range(min(args.num_samples, len(test_data))))
     if args.dataset == "cnn_dm":
@@ -232,6 +233,7 @@ def main():
     else:
         max_new_tokens = 128
     
+    skipped_samples = []
     processed_samples = []
     for idx, sample in tqdm(enumerate(test_data)):
         if idx % 100 == 0:
@@ -242,12 +244,19 @@ def main():
         prompt = prompt_template.format(context=doc)
         chat_prompt, chat_prompt_ids = get_chat_prompt_and_ids(prompt, tokenizer)
 
-        output_text = get_output(model, tokenizer, chat_prompt, chat_prompt_ids, max_response_tokens=max_new_tokens)
+        try:
+            output_text = get_output(model, tokenizer, chat_prompt, chat_prompt_ids, max_response_tokens=max_new_tokens)
 
-        # 1. Extract attention scores (adapted from _get_attns() in ContextCite demo)
-        # Attention scores = [num_layers, num_heads, num_output_tokens, num_output_tokens]
-        output_tokens = get_output_tokens(tokenizer, output_text)
-        response_start = get_response_start(chat_prompt_ids)  # Start of the generated token
+            # 1. Extract attention scores (adapted from _get_attns() in ContextCite demo)
+            # Attention scores = [num_layers, num_heads, num_output_tokens, num_output_tokens]
+            output_tokens = get_output_tokens(tokenizer, output_text)
+            response_start = get_response_start(chat_prompt_ids)  # Start of the generated token
+        
+        except torch.cuda.OutOfMemoryError:
+            print(f"CUDA out of memory during generation for sample {idx}. Skipping...")
+            torch.cuda.empty_cache()
+            skipped_samples.append(sample)
+            continue
 
         device = model.device
         model.config.output_attentions = True
@@ -261,10 +270,21 @@ def main():
             ).to(device)[None],
         }
 
-        with torch.no_grad(), torch.cuda.amp.autocast(enabled=True):
-            output = model(
-                **batch, output_attentions=True, return_dict=True
-            )
+        with torch.no_grad(), torch.cuda.amp.autocast(enabled=True): # TODO: try inference_mode
+            try:
+                output = model(
+                    **batch, 
+                    output_attentions=True, 
+                    output_hidden_states=False,
+                    return_dict=True
+                )
+
+            except torch.cuda.OutOfMemoryError:
+                print(f"CUDA out of memory during attention computation for sample {idx}. Skipping...")
+                torch.cuda.empty_cache()
+                skipped_samples.append(sample)
+                continue    
+
             # (1). Select the last layer to compute attention
             if args.mode == 'last':
                 layers = (-1,)  # attention layers to use (use the last layer by default)
@@ -273,7 +293,7 @@ def main():
             # (2). Alternatively, average the attention over all layers (note: this requires lots of GPU memory)
             elif args.mode == 'mean': 
                 all_attentions = torch.stack([attn[0] for attn in output["attentions"]]).cpu()  # [num_layers, num_heads, num_output_tokens, num_output_tokens]
-                attentions = all_attentions.mean(dim=0)  # [num_heads, num_output_tokens, num_output_tokens]
+                attentions = all_attentions.mean(dim=0).unsqueeze(0)  # [num_heads, num_output_tokens, num_output_tokens]
             
             # print(attentions.shape)
             del output
@@ -325,7 +345,14 @@ def main():
     # Save the processed instances to JSON file
     with open(args.save_path, 'w') as fh:
         json.dump(processed_samples, fh, indent=4)
+    
+    if skipped_samples:
+        skipped_save_path = args.save_path.replace('.json', '_skipped.json')
+        with open(skipped_save_path, 'w') as fh:
+            json.dump(skipped_samples, fh, indent=4)
 
 if __name__ == "__main__":
     main()
+
+# TODO: save the partial results when you get CUDA out of memory issue?
     

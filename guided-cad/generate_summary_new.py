@@ -1,3 +1,7 @@
+# TODO: Add support for running inference with Llama3.1-8b
+
+# TODO: implement CAD + lead3
+
 import torch
 from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM
 from huggingface_hub import login
@@ -87,6 +91,35 @@ def get_prompt(doc, important_sents, schema, dataset):
             instruction = "Summarise the document below in one sentence or two sentences:"
 
         prompt = f"{instruction}\n{doc}"
+    
+    # Lead-3 baseline: use the first 3 sentences as attributed sentences
+    elif schema == "lead3":
+        if dataset == "xsum":
+            instruction = "Summarise the document below in one sentence:"
+        elif dataset == "cnn_dm":
+            instruction = "Summarise the document below:"
+        elif dataset == "ccsum":
+            instruction = "Summarise the document below in one sentence or two sentences:"
+        
+        prompt = f"{instruction}\n{doc}\nYou should pay attention to the following main points:\n"  # TODO: try subtracting these sentences from the input doc?
+        sentences, _ = split_into_sentences(doc)
+        for id, sent in enumerate(sentences[:3]):
+            prompt += f"{str(id + 1)}. {sent}\n" 
+    
+    # Append attributed sentences before the input document
+    elif schema == "base+impt_prefix":
+        if dataset == "xsum":
+            instruction = "Summarise the document below in one sentence:"
+        elif dataset == "cnn_dm":
+            instruction = "Summarise the document below:"
+        elif dataset == "ccsum":
+            instruction = "Summarise the document below in one sentence or two sentences:"
+        
+        prompt = f"You should pay attention to the following main points:\n"  # TODO: try subtracting these sentences from the input doc?
+        for id, sent in enumerate(important_sents):
+            prompt += f"{str(id + 1)}. {sent}\n"
+        
+        prompt = f"{prompt}\n{instruction}\n{doc}"
 
     return prompt
 
@@ -261,7 +294,7 @@ def parse_args():
     parser.add_argument("--num_samples", default=2500, type=int, help="Number of test samples to evaluate on")
     parser.add_argument("--log_path", default="results/summary", type=str)
     parser.add_argument("--exp_name", type=str, help="Experiment name")
-    parser.add_argument("--schema", default="base", type=str, choices=['base', 'base+impt', 'impt_only', "base+impt_v2", 'mask_impt'],
+    parser.add_argument("--schema", default="base", type=str, choices=['base', 'base+impt', 'impt_only', "base+impt_v2", 'mask_impt', 'lead3', 'base+impt_prefix'],
                         help="whether to include important sentences in the prompt")
     parser.add_argument("--use_cad", action="store_true", help="Use context-aware decoding")
     parser.add_argument("--alpha", default=0.5, type=float, help="Parameter for context-aware decoding")
@@ -297,13 +330,17 @@ def main():
                                                       torch_dtype=torch.bfloat16,
                                                       device_map="auto",
                                                       use_auth_token=True,
-                                                      cache_dir="/mnt/ssd/llms")
+                                                      cache_dir="/mnt/ceph_rbd/llms")
     
-    tokenizer = AutoTokenizer.from_pretrained(model_name,
-                                              padding_side="left")
-    tokenizer.pad_token_id = 0 if tokenizer.pad_token_id is None else tokenizer.pad_token_id
-    tokenizer.bos_token_id = 1
-    tokenizer.model_max_length = context_window_length
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        
+    # tokenizer = AutoTokenizer.from_pretrained(model_name,
+    #                                           padding_side="left")
+    # tokenizer.pad_token_id = 0 if tokenizer.pad_token_id is None else tokenizer.pad_token_id
+    # tokenizer.bos_token_id = 1
+    # tokenizer.model_max_length = context_window_length
 
     # Initialise the model for constrastive decoding
     model = base_model
