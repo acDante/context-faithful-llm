@@ -13,6 +13,8 @@ from typing import List, Dict, Tuple
 import re
 import os
 from dotenv import load_dotenv
+import openai
+from openai import OpenAI
 
 from cad import CAD
 
@@ -27,6 +29,25 @@ output_key = {
     "cnn_dm": "highlights",
     "ccsum": "summary"
 }
+
+def get_prompt_template(method, dataset):
+    if method == "base":
+        if dataset == "xsum":
+            prompt_template = "Summarise the document below in one sentence:\n{doc}"
+        elif dataset == "cnn_dm":
+            prompt_template = "Summarise the document below:\n{doc}"
+        elif dataset == "ccsum":
+            prompt_template = "Summarise the document below in one sentence or two sentences:\n{doc}"
+
+    elif method == "gen_attr":
+        if dataset == "xsum":
+            prompt_template = "Extract a list of {num_sents} key sentences from the input document and then generate a summary in one sentence only based on the extracted facts: {doc}\n\nHere is the output format.\nKey Sentences:\n1. sentence1, 2. sentence2, ...\nSummary:\n[summary]\n"
+        elif dataset == "cnn_dm":
+            prompt_template = "Extract a list of {num_sents} key sentences from the input document and then generate a summary only based on the extracted facts: {doc}\n\nHere is the output format.\nKey Sentences:\n1. sentence1, 2. sentence2, ...\nSummary:\n[summary]\n"
+        elif dataset == "ccsum":
+            prompt_template = "Extract a list of {num_sents} key sentences from the input document and then generate a summary in one sentence or two sentences only based on the extracted facts: {doc}\n\nHere is the output format.\nKey Sentences:\n1. sentence1, 2. sentence2, ...\nSummary:\n[summary]\n"
+    
+    return prompt_template
 
 def load_model_and_tokenzier(model_name="meta-llama/Llama-3.1-8B-Instruct", cache_dir="/mnt/ssd/llms"):
     tokenizer = AutoTokenizer.from_pretrained(model_name,
@@ -58,7 +79,7 @@ def load_data(args):
         dataset_abstractive = ccsum_dataset.filter(lambda x: x["abstractiveness_bin"] == "high")
         test_data = dataset_abstractive['test']
         
-        test_data = test_data.select(range(min(args.num_samples, len(test_data))))
+    test_data = test_data.select(range(min(args.num_samples, len(test_data))))
     
     return test_data
 
@@ -85,17 +106,15 @@ def extract_sentences_and_summary(text):
     Returns:
         tuple: (list of key sentences, summary string)
     """
-    # Split the text to separate key sentences and summary sections
     try:
-        # Find the sections
-        key_sentences_start = text.find("Key Sentences:")
-        summary_start = text.find("Summary:", key_sentences_start)
+        # Find the summary section
+        summary_start = text.find("Summary:")
         
-        if key_sentences_start == -1 or summary_start == -1:
+        if summary_start == -1:
             return [], ""
         
-        # Extract the key sentences section
-        key_sentences_text = text[key_sentences_start + len("Key Sentences:"):summary_start].strip()
+        # Extract everything before "Summary:" as key sentences text
+        key_sentences_text = text[:summary_start].strip("\n[]")
         
         # Extract the summary
         summary = text[summary_start + len("Summary:"):].strip()
@@ -103,14 +122,26 @@ def extract_sentences_and_summary(text):
         # Parse the key sentences into a list
         sentences = []
         
-        # Split by the bullet points
-        bullet_items = key_sentences_text.split("- ")
+        # Split the text into lines
+        lines = key_sentences_text.split('\n')
         
-        # Filter out empty items and strip whitespace
-        for item in bullet_items:
-            item = item.strip()
-            if item:
-                sentences.append(item)
+        # Process each line
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Check if line starts with a number followed by period (e.g., "1.")
+            if re.match(r'^\d+\.', line):
+                # Remove the number prefix
+                sentence = re.sub(r'^\d+\.\s*', '', line).strip()
+                if sentence:
+                    sentences.append(sentence)
+            # Also check for bullet points for backward compatibility
+            elif line.startswith('- ') or line.startswith('* '):
+                sentence = line[2:].strip()
+                if sentence:
+                    sentences.append(sentence)
         
         return sentences, summary
     
@@ -150,6 +181,7 @@ def parse_args():
     parser.add_argument("--log_path", default="results/summary", type=str)
     parser.add_argument("--exp_name", type=str, help="Experiment name")
     parser.add_argument("--max_new_tokens", default=1024, type=int, help="Maximum number of tokens to generate")
+    parser.add_argument("--method", type=str, default="base", help="Which prompt template to use", choices=["base", "gen_attr"])
 
     args = parser.parse_args()
     return args
@@ -159,60 +191,96 @@ def main():
     args = parse_args()
     load_dotenv(".env")
     hf_token = os.environ.get("HF_TOKEN")
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
     login(hf_token)
     
     # Load test dataset
     test_data = load_data(args)
 
-    model, tokenizer = load_model_and_tokenzier(model_name=args.model_name, cache_dir="/mnt/ssd/llms")
+    if "gpt" in args.model_name:
+        model = OpenAI(api_key=openai_api_key)
+    else:
+        model, tokenizer = load_model_and_tokenzier(model_name=args.model_name, cache_dir="/mnt/ssd/llms")
 
     log_path = Path(args.log_path)
     output_path = log_path / f"{args.exp_name}_preds.json"
 
+    prompt_template = get_prompt_template(args.method, args.dataset)
     processed_samples = []
     for idx, sample in tqdm(enumerate(test_data)):
         doc = sample[input_key[args.dataset]]
-        prompt_template = "Extract a list of {num_sents} key sentences from the input document and then generate a one-sentence summary only based on the extracted facts: {doc}\n\nHere is the output format.\nKey Sentences:\n[- sentence1, - sentence2, ...]\nSummary:\n[summary]\n"
-        prompt = prompt_template.format(num_sents=args.num_sents, 
-                                        doc=doc)
+        if args.method == "base":
+            prompt = prompt_template.format(doc=doc)
+        elif args.method == "gen_attr":
+            prompt = prompt_template.format(num_sents=args.num_sents, doc=doc)
+
+        # prompt_template = "Extract a list of {num_sents} key sentences from the input document and then generate a summary in one sentence only based on the extracted facts: {doc}\n\nHere is the output format.\nKey Sentences:\n1. sentence1, 2. sentence2, ...\nSummary:\n[summary]\n"
+        # prompt = prompt_template.format(num_sents=args.num_sents, 
+        #                                 doc=doc)
         
         messages = [{"role": "user", "content": prompt}]
-        raw_prompt = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True
-        )
+        if "gpt" in args.model_name:
+            output_text = model.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                max_tokens=args.max_new_tokens,
+                temperature=0.0,
+                top_p=1.0,
+                n=1
+            )
+            output_text = output_text.choices[0].message.content
+            
+        else:
+            raw_prompt = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True
+            )
 
-        prompt_ids = tokenizer.encode(raw_prompt, add_special_tokens=False)
+            prompt_ids = tokenizer.encode(raw_prompt, add_special_tokens=False)
 
-        input_ids = torch.tensor([prompt_ids], device=model.device)
+            input_ids = torch.tensor([prompt_ids], device=model.device)
 
-        generate_kwargs = {
-            "max_new_tokens": args.max_new_tokens,
-            "do_sample": False,
-            "temperature": 0.0
-        }
+            generate_kwargs = {
+                "max_new_tokens": args.max_new_tokens,
+                "do_sample": False,
+                "temperature": 0.0
+            }
 
-        output_ids = model.generate(input_ids, **generate_kwargs)
+            output_ids = model.generate(input_ids, **generate_kwargs)
 
-        output_text = tokenizer.decode(output_ids[0, input_ids.shape[1]:], skip_special_tokens=True)
-        key_sentences, summary = extract_sentences_and_summary(output_text)
-        summary = post_process(summary, args.dataset)
+            output_text = tokenizer.decode(output_ids[0, input_ids.shape[1]:], skip_special_tokens=True)
+        
+        # output_text = post_process(output_text, args.dataset)
+        if args.method == "gen_attr":
+            key_sentences, summary = extract_sentences_and_summary(output_text)
+            summary = post_process(summary, args.dataset)
 
-        # Save the attributed sentences and generated summary
-        attributed_sents = []
-        for sent in key_sentences:
-            sent = sent.strip()
-            if len(sent) > 0:
-                attributed_sents.append(sent)
+            # Save the attributed sentences and generated summary
+            attributed_sents = []
+            for sent in key_sentences:
+                sent = sent.strip()
+                if len(sent) > 0:
+                    attributed_sents.append(sent)
 
-        processed_sample = dict()
-        processed_sample['id'] = sample['id']
-        processed_sample[input_key[args.dataset]] = doc
-        processed_sample[output_key[args.dataset]] = sample[output_key[args.dataset]]
-        processed_sample.update({"attributed_sents": attributed_sents})
-        processed_sample.update({"generated_summary": summary})
-        processed_samples.append(processed_sample)
+            processed_sample = dict()
+            processed_sample['id'] = sample['id']
+            processed_sample[input_key[args.dataset]] = doc
+            processed_sample[output_key[args.dataset]] = sample[output_key[args.dataset]]
+            processed_sample.update({"attributed_sents": attributed_sents})
+            processed_sample.update({"generated_summary": summary})
+            processed_sample.update({"raw_output": output_text})
+            processed_samples.append(processed_sample)
+        
+        elif args.method == "base":
+            summary = post_process(output_text, args.dataset)
+            processed_sample = dict()
+            processed_sample['id'] = sample['id']
+            processed_sample[input_key[args.dataset]] = doc
+            processed_sample[output_key[args.dataset]] = sample[output_key[args.dataset]]
+            processed_sample.update({"generated_summary": summary})
+            processed_sample.update({"raw_output": output_text})
+            processed_samples.append(processed_sample)          
     
     # Save the processed instances to JSON file
     with open(output_path, 'w') as fh:
