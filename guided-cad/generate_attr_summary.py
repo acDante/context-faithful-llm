@@ -52,11 +52,19 @@ def get_prompt_template(method, dataset):
 def load_model_and_tokenzier(model_name="meta-llama/Llama-3.1-8B-Instruct", cache_dir="/mnt/ssd/llms"):
     tokenizer = AutoTokenizer.from_pretrained(model_name,
                                               cache_dir=cache_dir)
-    model = AutoModelForCausalLM.from_pretrained(model_name,
-                                                 torch_dtype=torch.bfloat16,
-                                                 device_map="auto",
-                                                 cache_dir=cache_dir,
-                                                 )
+    if "Qwen" in model_name:
+        model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    torch_dtype="auto",
+                    device_map="auto",
+                    cache_dir=cache_dir,
+                )
+    else:
+        model = AutoModelForCausalLM.from_pretrained(model_name,
+                                                    torch_dtype=torch.bfloat16,
+                                                    device_map="auto",
+                                                    cache_dir=cache_dir,
+                                                    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     
@@ -70,7 +78,7 @@ def load_data(args):
     #         test_data = test_data[:args.num_samples]
     # else:
     if args.dataset == "xsum":
-        test_data = load_dataset("xsum", split="test")
+        test_data = load_dataset("xsum", split="test", trust_remote_code=True)
     elif args.dataset == "cnn_dm":
         test_data = load_dataset('cnn_dailymail', '3.0.0', split='test')
     elif args.dataset == "ccsum":
@@ -189,7 +197,7 @@ def parse_args():
 def main():
 
     args = parse_args()
-    load_dotenv(".env")
+    load_dotenv("../.env")
     hf_token = os.environ.get("HF_TOKEN")
     openai_api_key = os.environ.get("OPENAI_API_KEY")
     login(hf_token)
@@ -200,7 +208,7 @@ def main():
     if "gpt" in args.model_name:
         model = OpenAI(api_key=openai_api_key)
     else:
-        model, tokenizer = load_model_and_tokenzier(model_name=args.model_name, cache_dir="/mnt/ssd/llms")
+        model, tokenizer = load_model_and_tokenzier(model_name=args.model_name, cache_dir="/mnt/ceph_rbd/llms")
 
     log_path = Path(args.log_path)
     output_path = log_path / f"{args.exp_name}_preds.json"
@@ -231,11 +239,20 @@ def main():
             output_text = output_text.choices[0].message.content
             
         else:
-            raw_prompt = tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True
-            )
+            if "Qwen" in args.model_name:
+                raw_prompt = tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    enable_thinking=False    # Disable thinking mode for greedy decoding
+                )
+
+            else:
+                raw_prompt = tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True
+                )
 
             prompt_ids = tokenizer.encode(raw_prompt, add_special_tokens=False)
 

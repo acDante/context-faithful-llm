@@ -14,7 +14,9 @@ from tqdm import tqdm
 import copy
 import nltk
 from typing import List, Dict, Tuple
+import os
 import re
+from dotenv import load_dotenv
 
 from cad import CAD
 
@@ -308,7 +310,9 @@ def parse_args():
 def main():
     
     args = parse_args()
-    login("HF_TOKEN")
+    load_dotenv("../.env")
+    hf_token = os.environ.get("HF_TOKEN")
+    login(hf_token)
 
     # Load test dataset
     test_data = load_data(args)
