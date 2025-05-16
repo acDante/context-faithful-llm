@@ -6,6 +6,7 @@ from tqdm import tqdm
 import nltk
 import numpy as np
 import os
+import copy
 
 from summac.model_summac import SummaCZS, SummaCConv
 from prefs.atomic_facts import AtomicFactGenerator
@@ -40,10 +41,10 @@ def compute_factscore(pred, gold, afg, fs):
 
     # Compute fact precision, fact recall and PREFS score
     # fs = FactScorer(model_name=model_name, cache_dir_prefix=cache_dir_prefix)
-    fact_precision, score_per_fact = fs.get_score(predicted_facts,
-                                                  gold,
-                                                  summname='test-summary',
-                                                  )
+    fact_precision, fs_score_per_fact = fs.get_score(predicted_facts,
+                                                     gold,
+                                                     summname='test-summary',
+                                                    )
     # Handle corner cases
     if len(predicted_facts) == 0 or np.isnan(fact_precision):
         fact_precision = 0.0
@@ -66,7 +67,7 @@ def compute_factscore(pred, gold, afg, fs):
                "fact_recall": fact_recall, 
                "prefs_score": prefs_score}
     
-    return metrics
+    return metrics, predicted_facts, gold_facts, fs_score_per_fact
 
 def filter_facts(facts):
     """Some facts are vacuous of any real information, exclude these before scoring."""
@@ -138,16 +139,18 @@ if __name__ == "__main__":
     afg = AtomicFactGenerator(args.model_name, cache_dir_prefix)
     fs = FactScorer(model_name=args.model_name, cache_dir_prefix=cache_dir_prefix)
 
+    annotated_samples = []
     for idx, sample in tqdm(enumerate(data)):
         document = sample[input_key[args.dataset]]
         gold_summary = sample[output_key[args.dataset]]
         # gold_summary = sample['summary']
         example_output = sample['generated_summary']
+        annotated_sample = copy.deepcopy(sample)
 
         # Compute fact scores (TODO: debug nan, check the length/variables/fact_recall, e.g. using xsum-mistral-7b-base_preds.json)
         if args.metrics == "factscore":
         #    fact_score = compute_factscore(example_output, gold_summary)
-            fact_score = compute_factscore(
+            fact_score, predicted_facts, gold_facts, score_per_fact = compute_factscore(
                 example_output, 
                 document, 
                 afg,
@@ -155,16 +158,25 @@ if __name__ == "__main__":
             )
             fact_scores.append(fact_score["fact_precision"])
             prisma_scores.append(fact_score["prefs_score"])
+            annotated_sample["fact_precision"] = fact_score["fact_precision"]
+            annotated_sample["prefs_score"] = fact_score["prefs_score"]
+            annotated_sample["predicted_facts"] = predicted_facts
+            # annotated_sample["gold_facts"] = gold_facts
+            annotated_sample["score_per_fact"] = score_per_fact
 
         # Compute Summa-C score
         if args.metrics == "summac":
             summac_score = model_conv.score([document], [example_output])
             summac_scores.append(summac_score["scores"][0])
+            annotated_sample["summac_score"] = summac_score["scores"][0]
 
         # Collect predictions and gold summaries
         documents.append(document)
         golds.append(gold_summary)
         predictions.append(example_output)
+
+        # Store the evaluation metrics for each samples
+        annotated_samples.append(annotated_sample)
 
     exp_dir = os.path.join("exps", extract_filename(args.data_path))
     exp_dir = f"{exp_dir}_{short_model_name[args.model_name]}"
@@ -195,10 +207,16 @@ if __name__ == "__main__":
         
         evaluation_metrics["fact_precision"] = avg_fact_score
         evaluation_metrics["prisma_score"] = avg_prisma_score
-        
 
         with open(log_path, "a") as fout:
             fout.write(json.dumps(evaluation_metrics) + "\n")
             # fout.write(f"Fact Precision: {avg_fact_score}\n")
             # fout.write(f"PRISMA Score: {avg_prisma_score}\n")
     
+    # Save the annotated samples
+    annotated_samples_path = os.path.join(exp_dir, f"annotated_samples_{args.metrics}.json")
+    if not os.path.exists(exp_dir):
+        os.makedirs(exp_dir)
+    
+    with open(annotated_samples_path, "w") as fout:
+        json.dump(annotated_samples, fout, indent=4)
