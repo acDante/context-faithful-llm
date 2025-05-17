@@ -9,6 +9,8 @@ from context_cite import ContextCiter
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 from datasets import load_dataset
 from huggingface_hub import login
+import os
+from dotenv import load_dotenv
 
 
 input_key = {
@@ -51,6 +53,8 @@ def load_model(model_name, cache_dir="/mnt/ceph_rbd/llms", device="cuda"):
     tokenizer = AutoTokenizer.from_pretrained(model_name, 
                                               cache_dir=cache_dir)
     tokenizer.model_max_length = context_window_length
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
     
     return model, tokenizer
 
@@ -77,7 +81,9 @@ def parse_args():
 
 def main():
     args = parse_args()
-    login("HF_TOKEN")
+    load_dotenv("../.env")
+    hf_token = os.environ.get("HF_TOKEN")
+    login(hf_token)
 
     # Load the test data
     model, tokenizer = load_model(
@@ -86,7 +92,7 @@ def main():
     test_data = load_data(args.dataset)
     test_data = test_data.select(range(min(args.num_samples, len(test_data))))
     if args.dataset == "cnn_dm":
-        max_new_tokens = 256
+        max_new_tokens = 512
     else:
         max_new_tokens = 128
 
@@ -96,7 +102,7 @@ def main():
             print(f"Currently processing: {idx}-th sample.\n")
         
         context = sample[input_key[args.dataset]]
-        query = "Generate a summary of the document"
+        query = ""
 
         # Extract top K attributed sentences by ContextCiter
         cc = ContextCiter(model, tokenizer, context, query)

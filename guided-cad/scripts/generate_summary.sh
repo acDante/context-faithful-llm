@@ -3,8 +3,8 @@
 
 DATASET=${1:-"xsum"}
 MODEL=${2:-"llama3.1-8b"}
-ATTRIBUTION="attention"
-NUM_SAMPLES=100
+ATTRIBUTION="gen_attr"
+NUM_SAMPLES=1000
 
 if [ "$MODEL" = "llama3.1-8b" ]; then
     MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct"
@@ -23,7 +23,7 @@ for schema in "${schema_methods[@]}"; do
     set -x;
     python generate_summary_new.py --model_name ${MODEL_NAME} \
                                     --dataset ${DATASET} \
-                                    --attr_data_path ../attribution/results/${DATASET}-${MODEL}-${ATTRIBUTION}-mean-${NUM_SAMPLES}.json \
+                                    --attr_data_path ../attribution/results/${DATASET}-${MODEL}-${ATTRIBUTION}-${NUM_SAMPLES}.json \
                                     --num_samples ${NUM_SAMPLES} \
                                     --log_path results/summary/${DATASET}/${MODEL} \
                                     --exp_name ${DATASET}-${MODEL}-${ATTRIBUTION}-${schema}-${NUM_SAMPLES} \
@@ -33,28 +33,29 @@ for schema in "${schema_methods[@]}"; do
 done
 
 # Run DoLA methods
-python generate_summary_new.py --model_name ${MODEL_NAME} --dataset ${DATASET} --num_samples ${NUM_SAMPLES} --log_path results/summary/${DATASET}/${MODEL} --exp_name ${DATASET}-${MODEL}-base-dola-low-${NUM_SAMPLES} --schema base --method dola --dola_config low --max_new_tokens 128 --attr_data_path ../attribution/results/${DATASET}-${MODEL}-${ATTRIBUTION}-mean-${NUM_SAMPLES}.json
+# python generate_summary_new.py --model_name ${MODEL_NAME} --dataset ${DATASET} --num_samples ${NUM_SAMPLES} --log_path results/summary/${DATASET}/${MODEL} --exp_name ${DATASET}-${MODEL}-base-dola-low-${NUM_SAMPLES} --schema base --method dola --dola_config low --max_new_tokens 128 --attr_data_path ../attribution/results/${DATASET}-${MODEL}-${ATTRIBUTION}-mean-${NUM_SAMPLES}.json
 
-python generate_summary_new.py --model_name ${MODEL_NAME} --dataset ${DATASET} --num_samples ${NUM_SAMPLES} --log_path results/summary/${DATASET}/${MODEL} --exp_name ${DATASET}-${MODEL}-base-dola-high-${NUM_SAMPLES} --schema base --method dola --dola_config high --max_new_tokens 128 --attr_data_path ../attribution/results/${DATASET}-${MODEL}-${ATTRIBUTION}-mean-${NUM_SAMPLES}.json
+# python generate_summary_new.py --model_name ${MODEL_NAME} --dataset ${DATASET} --num_samples ${NUM_SAMPLES} --log_path results/summary/${DATASET}/${MODEL} --exp_name ${DATASET}-${MODEL}-base-dola-high-${NUM_SAMPLES} --schema base --method dola --dola_config high --max_new_tokens 128 --attr_data_path ../attribution/results/${DATASET}-${MODEL}-${ATTRIBUTION}-mean-${NUM_SAMPLES}.json
 
 # Run baseline CAD method
-python generate_summary_new.py --model_name ${MODEL_NAME} --dataset ${DATASET} --num_samples ${NUM_SAMPLES} --log_path results/summary/${DATASET}/${MODEL} --exp_name ${DATASET}-${MODEL}-base-cad-${NUM_SAMPLES} --schema base --method cad --alpha 0.5 --max_new_tokens 128 --attr_data_path ../attribution/results/${DATASET}-${MODEL}-${ATTRIBUTION}-mean-${NUM_SAMPLES}.json
+# python generate_summary_new.py --model_name ${MODEL_NAME} --dataset ${DATASET} --num_samples ${NUM_SAMPLES} --log_path results/summary/${DATASET}/${MODEL} --exp_name ${DATASET}-${MODEL}-base-cad-${NUM_SAMPLES} --schema base --method cad --alpha 0.5 --max_new_tokens 128 --attr_data_path ../attribution/results/${DATASET}-${MODEL}-${ATTRIBUTION}-mean-${NUM_SAMPLES}.json
 
 
 # Run attribution-guided CAD approach
 cad_methods=("base+impt" "mask_impt")
+# cad_methods=("base+impt")
 
 for schema in "${cad_methods[@]}"; do
     set -x;
     python generate_summary_new.py --model_name ${MODEL_NAME} \
                                     --dataset ${DATASET} \
-                                    --attr_data_path ../attribution/results/${DATASET}-${MODEL}-${ATTRIBUTION}-mean-${NUM_SAMPLES}.json \
+                                    --attr_data_path ../attribution/results/${DATASET}-${MODEL}-${ATTRIBUTION}-${NUM_SAMPLES}.json \
                                     --num_samples ${NUM_SAMPLES} \
                                     --log_path results/summary/${DATASET}/${MODEL} \
                                     --exp_name ${DATASET}-${MODEL}-${ATTRIBUTION}-${schema}-cad-${NUM_SAMPLES} \
                                     --schema ${schema} \
                                     --method cad \
                                     --alpha 0.5 \
-                                    --max_new_tokens 128 \
+                                    --max_new_tokens 128
 
 done

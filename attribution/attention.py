@@ -3,6 +3,7 @@ import json
 import argparse
 from tqdm import tqdm
 import copy
+import os
 
 import torch
 import numpy as np
@@ -11,6 +12,7 @@ import nltk
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from datasets import load_dataset
 from huggingface_hub import login
+from dotenv import load_dotenv
 
 
 input_key = {
@@ -221,7 +223,9 @@ def get_top_k_sentences(sentences, attention_scores, k=3):
 def main():
 
     args = parse_args()
-    login("HF_TOKEN")
+    load_dotenv("../.env")
+    hf_token = os.environ.get("HF_TOKEN")
+    login(hf_token)
 
     # TODO: Add the main function (check: inseq_attention_llama3.1.ipynb) 
     # TODO: double check the hyperparameters (e.g. max_new_tokens, prompt format, make sure you use the right arguments when calling each utility function)
@@ -229,7 +233,7 @@ def main():
     test_data = load_data(args.dataset)
     test_data = test_data.select(range(min(args.num_samples, len(test_data))))
     if args.dataset == "cnn_dm":
-        max_new_tokens = 512
+        max_new_tokens = 128
     else:
         max_new_tokens = 128
     
@@ -292,7 +296,15 @@ def main():
             
             # (2). Alternatively, average the attention over all layers (note: this requires lots of GPU memory)
             elif args.mode == 'mean': 
-                all_attentions = torch.stack([attn[0] for attn in output["attentions"]]).cpu()  # [num_layers, num_heads, num_output_tokens, num_output_tokens]
+                # Process one attention tensor at a time
+                all_attentions = []
+                for attn in output["attentions"]:
+                    # Move each tensor to CPU immediately after accessing it
+                    all_attentions.append(attn[0].detach().cpu())
+                
+                # Stack them after they've all been moved to CPU
+                all_attentions = torch.stack(all_attentions)
+#                all_attentions = torch.stack([attn[0] for attn in output["attentions"]]).cpu()  # [num_layers, num_heads, num_output_tokens, num_output_tokens]
                 attentions = all_attentions.mean(dim=0).unsqueeze(0)  # [num_heads, num_output_tokens, num_output_tokens]
             
             # print(attentions.shape)

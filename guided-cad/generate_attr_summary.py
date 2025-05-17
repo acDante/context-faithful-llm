@@ -278,7 +278,13 @@ def main():
             for sent in key_sentences:
                 sent = sent.strip()
                 if len(sent) > 0:
-                    attributed_sents.append(sent)
+                    attributed_sents.append(
+                        {
+                            "input_sequence": sent,
+                            "score": 1.0,
+                        }
+                    )
+                    # attributed_sents.append(sent)
 
             processed_sample = dict()
             processed_sample['id'] = sample['id']
