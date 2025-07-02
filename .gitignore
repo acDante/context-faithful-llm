@@ -12,3 +12,4 @@ evaluate/is_supported_factscore_caches*/
 evaluate/prefs/sent2facts_cache*.json
 attribution/notebooks/
 guided-cad/notebooks/*.ipynb
+notebooks/
