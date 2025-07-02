@@ -5,5 +5,10 @@ datasets/
 results/
 api_secrets.py
 evaluate/exps/
+evaluate/logs/
+evaluate/prefs/api.key
+evaluate/prefs/hf.key
 evaluate/is_supported_factscore_caches*/
 evaluate/prefs/sent2facts_cache*.json
+attribution/notebooks/
+guided-cad/notebooks/*.ipynb
