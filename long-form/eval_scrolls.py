@@ -1,6 +1,8 @@
 import argparse
 import json
 import os
+from tqdm import tqdm
+from dotenv import load_dotenv
 from vllm import LLM, SamplingParams
 from datasets import load_dataset
 
@@ -9,17 +11,20 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Generate summaries on long-form datasets using vLLM")
     parser.add_argument("--model", default="meta-llama/Llama-3.2-3B-Instruct", 
                         help="Model name")
-    parser.add_argument("--dataset", choices=["qmsum", "summscreen"], default="qmsum",
+    parser.add_argument("--dataset", choices=["qmsum", "summscreen"], default="summscreen",
                         help="Dataset used for evaluation")
-    parser.add_argument("--save-path", default="results", help="Path to save the predictions")
+    parser.add_argument("--save-path", default="results/summary", help="Path to save the predictions")
     parser.add_argument("--split", default="validation", help="Dataset split")
     parser.add_argument("--max-samples", type=int, default=100)
     parser.add_argument("--max-tokens", type=int, default=768)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--max-model-len", type=int, default=34000)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.95)
+    parser.add_argument("--tensor_parallel_size", type=int, default=2)
+    parser.add_argument("--max_num_batched_tokens", type=int, default=8192)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--attr_data_path", type=str, default=None, help="Path to the processed data with annotated attributions")
+    parser.add_argument("--attr_type", type=str, default="sent3", help="Which attribution method is used")
     parser.add_argument("--method", type=str, default="base", choices=['base', 'base+impt'], help="which attribution-guided generation approach to use")
 
     return parser.parse_args()
@@ -68,27 +73,30 @@ def extract_summary(text):
         
         # Remove any trailing formatting or extra text after the summary
         # Split by common delimiters and take the first part
-        for delimiter in ['\n\n', '\n---', '\nNote:', '\nAdditional']:
-            if delimiter in summary:
-                summary = summary.split(delimiter)[0]
-                break
+        # for delimiter in ['\n\n', '\n---', '\nNote:', '\nAdditional']:
+        #     if delimiter in summary:
+        #         summary = summary.split(delimiter)[0]
+        #         break
         
         return summary.strip()
     return text.strip()
 
 def main():
     args = parse_args()
+    load_dotenv(".env")
+    hf_token = os.environ.get("HF_TOKEN")
 
     # Initialize the model
     llm = LLM(
         model = args.model,
         max_model_len = args.max_model_len,
         gpu_memory_utilization = args.gpu_memory_utilization,
-        tensor_parallel_size=1,
+        tensor_parallel_size=args.tensor_parallel_size,
         enable_chunked_prefill=True,
-        max_num_batched_tokens=8192,  # Reduce if OOM, increase for better throughput
+        max_num_batched_tokens=args.max_num_batched_tokens,  # Reduce if OOM, increase for better throughput
         swap_space=4,   # GB of CPU memory for overflow
         enforce_eager=False,  # Keep as False for better performance
+        download_dir="/mnt/ceph_rbd/llms"
     )
 
     sampling_params = SamplingParams(
@@ -97,9 +105,14 @@ def main():
     )
 
     # Load the dataset
-    dataset_map = {"qmsum": "qmsum", "summscreen": "summ_screen_fd"}
-    dataset = load_dataset("tau/scrolls", dataset_map[args.dataset])[args.split]
-    data = dataset.select(range(min(args.max_samples, len(dataset))))
+    if args.attr_data_path:
+        with open(args.attr_data_path, "r") as fin:
+            data = json.load(fin)
+            data = data[:args.max_samples]
+    else:
+        dataset_map = {"qmsum": "qmsum", "summscreen": "summ_screen_fd"}
+        dataset = load_dataset("tau/scrolls", dataset_map[args.dataset])[args.split]
+        data = dataset.select(range(min(args.max_samples, len(dataset))))
 
     documents = [item['input'] for item in data]
     references = [item['output'] for item in data]
@@ -133,11 +146,16 @@ def main():
 
     # Generate summaries
     predictions = []
-    outputs = llm.chat(messages=chat_messages,
-                       sampling_params=sampling_params,
-                       use_tqdm=True)
-                    #    chat_template_kwargs={"enable_thinking": False},  # Disable thinking for Qwen3 models
-                    #    use_tqdm=True)
+    if "Qwen" in args.model:
+        outputs = llm.chat(messages=chat_messages,
+                           sampling_params=sampling_params,
+                           use_tqdm=True,
+                           chat_template_kwargs={"enable_thinking": False})
+        
+    else:
+        outputs = llm.chat(messages=chat_messages,
+                           sampling_params=sampling_params,
+                           use_tqdm=True)
     
     for output in outputs:
         prediction = extract_summary(output.outputs[0].text)
@@ -151,7 +169,7 @@ def main():
         results.append(result_item)
     
     short_model_name = get_short_model_name(args.model)
-    filename = os.path.join(args.save_path, f"{short_model_name}_{args.dataset}_{args.split}_{len(results)}.json")
+    filename = os.path.join(args.save_path, f"{short_model_name}_{args.dataset}_{args.split}_{len(results)}_attr-{args.attr_type}_{args.method}.json")
     
     with open(filename, 'w') as f:
         json.dump(results, f, indent=4)

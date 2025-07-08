@@ -244,7 +244,7 @@ def main():
                     messages,
                     tokenize=False,
                     add_generation_prompt=True,
-                    enable_thinking=False    # Disable thinking mode for greedy decoding
+                    enable_thinking=False    # Disable thinking mode for greedy decoding#!/bin/bash
                 )
 
             else:

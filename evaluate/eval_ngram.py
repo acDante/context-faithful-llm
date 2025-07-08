@@ -13,13 +13,17 @@ from utils.novel_ngram import *
 input_key = {
     "xsum": "document",
     "cnn_dm": "article",
-    "ccsum": "article"
+    "ccsum": "article",
+    "summscreen": "input",
+    "qmsum": "input"
 }
 
 output_key = {
     "xsum": "summary",
     "cnn_dm": "highlights",
-    "ccsum": "summary"
+    "ccsum": "summary",
+    "summscreen": "output",
+    "qmsum": "output"
 }
 
 def mean_score(scores):
@@ -36,7 +40,7 @@ def extract_filename(json_path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_path", type=str, help="Path to the prediction file (.json)")
-    parser.add_argument("--dataset", default="xsum", type=str, choices=['cnn_dm', 'xsum', 'ccsum'])
+    parser.add_argument("--dataset", default="xsum", type=str, choices=['cnn_dm', 'xsum', 'ccsum', 'summscreen', 'qmsum'])
     parser.add_argument("--max_ngram_size", default=3, type=int, help="How many novel n-grams to check")
 
     args = parser.parse_args()

@@ -12,13 +12,17 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 input_key = {
     "xsum": "document",
     "cnn_dm": "article",
-    "ccsum": "article"
+    "ccsum": "article",
+    "summscreen": "input",
+    "qmsum": "input"
 }
 
 output_key = {
     "xsum": "summary",
     "cnn_dm": "highlights",
-    "ccsum": "summary"
+    "ccsum": "summary",
+    "summscreen": "output",
+    "qmsum": "output"
 }
 
 REL_PROMPT_TEMPLATE = '''You will be given one summary written for a news article.
@@ -134,7 +138,7 @@ class QwenEvaluator:
        
     def evaluate(self, args, source, target):
         if args.metrics == "consistency":
-            prompt = PROMPT_TEMPLATE.format(source=source, target=target)
+            prompt = CON_PROMPT_TEMPLATE.format(source=source, target=target)
         elif args.metrics == "relevance":
             prompt = REL_PROMPT_TEMPLATE.format(source=source, target=target)
         
@@ -152,7 +156,7 @@ class QwenEvaluator:
        
         generated_ids = self.model.generate(
         **model_inputs,
-        max_new_tokens=32768,
+        max_new_tokens=32,
         do_sample=False,
         temperature=None, 
         top_p=None, 
@@ -189,7 +193,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate target text against source text using Qwen model.")
     parser.add_argument("--model_name", type=str, required=True, help="Name of the Qwen model.")
     parser.add_argument("--data_path", type=str, help="Path to the prediction file (.json)")
-    parser.add_argument("--dataset", default="xsum", type=str, choices=['cnn_dm', 'xsum', 'ccsum'])
+    parser.add_argument("--dataset", default="xsum", type=str, choices=['cnn_dm', 'xsum', 'ccsum', 'summscreen', 'qmsum'])
     parser.add_argument("--output_path", type=str, default="results/scores.json", help="Path to save the evaluation scores.")
     parser.add_argument("--metrics", type=str, choices=['consistency', 'relevance'], default='consistency', help="Which dimension to evaluate")
     

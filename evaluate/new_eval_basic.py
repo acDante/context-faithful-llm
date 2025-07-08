@@ -16,13 +16,17 @@ from summac.model_summac import SummaCZS, SummaCConv
 input_key = {
     "xsum": "document",
     "cnn_dm": "article",
-    "ccsum": "article"
+    "ccsum": "article",
+    "summscreen": "input",
+    "qmsum": "input"
 }
 
 output_key = {
     "xsum": "summary",
     "cnn_dm": "highlights",
-    "ccsum": "summary"
+    "ccsum": "summary",
+    "summscreen": "output",
+    "qmsum": "output"
 }
 
 def extract_filename(json_path):
@@ -109,7 +113,7 @@ def postprocess_text(preds, labels):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_path", type=str, help="Path to the prediction file (.json)")
-    parser.add_argument("--dataset", default="xsum", type=str, choices=['cnn_dm', 'xsum', 'extra_cnn', 'ccsum'])
+    parser.add_argument("--dataset", default="xsum", type=str, choices=['cnn_dm', 'xsum', 'extra_cnn', 'ccsum', 'summscreen', 'qmsum'])
     parser.add_argument("--log_path", type=str, help="Path to save the evaluation results for each file")
     args = parser.parse_args()
     return args
@@ -167,8 +171,15 @@ if __name__ == "__main__":
     evaluation_metrics["summac_score"] = mean_score(summac_scores)
 
     print(evaluation_metrics)
-    with open(os.path.join(log_path, "average_metrics.json"), "w") as fout:
-        json.dump(evaluation_metrics, fout, indent=4)
+    save_path = os.path.join(log_path, "average_metrics.json")
+    if not os.path.exists(log_path):
+        with open(save_path, "w") as fout:
+            json.dump(evaluation_metrics, fout, indent=4)
+    else:
+        with open(save_path, "a") as fout:
+            json.dump(evaluation_metrics, fout, indent=4)
+    # with open(os.path.join(log_path, "average_metrics.json"), "w") as fout:
+    #     json.dump(evaluation_metrics, fout, indent=4)
     
     with open(os.path.join(log_path, "metrics_per_sample.json"), "w") as fout:
         json.dump(annotated_samples, fout, indent=4)

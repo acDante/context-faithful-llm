@@ -4,6 +4,8 @@ import argparse
 import json
 import os
 import re
+from tqdm import tqdm
+from dotenv import load_dotenv
 from vllm import LLM, SamplingParams
 from datasets import load_dataset
 
@@ -12,15 +14,17 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Extract generative attribution on long-form datasets using vLLM")
     parser.add_argument("--model", default="meta-llama/Llama-3.2-3B-Instruct", 
                         help="Model name")
-    parser.add_argument("--dataset", choices=["qmsum", "summscreen"], default="qmsum",
+    parser.add_argument("--dataset", choices=["qmsum", "summscreen"], default="summscreen",
                         help="Dataset used for evaluation")
-    parser.add_argument("--save-path", default="results", help="Path to save the predictions")
+    parser.add_argument("--save-path", default="results/attribution", help="Path to save the predictions")
     parser.add_argument("--split", default="validation", help="Dataset split")
     parser.add_argument("--max-samples", type=int, default=100)
     parser.add_argument("--max-tokens", type=int, default=1500)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--max-model-len", type=int, default=34000)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.95)
+    parser.add_argument("--tensor_parallel_size", type=int, default=2)
+    parser.add_argument("--max_num_batched_tokens", type=int, default=8192)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--num_sents", default=3, type=int, help="Number of attributed sentences to extract")
     parser.add_argument("--attr_type", default="sentence", type=str, choices=["sentence", "fact"])
@@ -101,11 +105,12 @@ def main():
         model = args.model,
         max_model_len = args.max_model_len,
         gpu_memory_utilization = args.gpu_memory_utilization,
-        tensor_parallel_size=1,
+        tensor_parallel_size=args.tensor_parallel_size,
         enable_chunked_prefill=True,
-        max_num_batched_tokens=8192,  # Reduce if OOM, increase for better throughput
+        max_num_batched_tokens=args.max_num_batched_tokens,  # Reduce if OOM, increase for better throughput
         swap_space=4,   # GB of CPU memory for overflow
         enforce_eager=False,  # Keep as False for better performance
+        download_dir="/mnt/ceph_rbd/llms"
     )
 
     sampling_params = SamplingParams(
@@ -181,7 +186,7 @@ def main():
         results.append(result_item)
     
     short_model_name = get_short_model_name(args.model)
-    filename = os.path.join(args.save_path, f"{short_model_name}_{args.dataset}_{args.split}_{len(results)}_gen_attr_{args.attr_type}.json")
+    filename = os.path.join(args.save_path, f"{short_model_name}_{args.dataset}_{args.split}_{len(results)}_gen_attr_{args.attr_type}_num{args.num_sents}.json")
 
     with open(filename, 'w') as f:
         json.dump(results, f, indent=4)

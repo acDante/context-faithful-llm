@@ -204,7 +204,7 @@ def load_data(args):
 
 # Generate the output text given the model and input ids
 def generate(model, tokenizer, input_ids, model_name, max_new_tokens=128):
-    if "Mistral" in model_name:
+    if "Mistral" or "Qwen" in model_name:
         output_ids = model.generate(input_ids,
                                     do_sample=False,
                                     max_new_tokens=max_new_tokens,
@@ -225,7 +225,7 @@ def generate(model, tokenizer, input_ids, model_name, max_new_tokens=128):
 
 # Generate the output text using CAD model
 def cad_generate(model, tokenizer, question_prompt, prompt, model_name, alpha, max_new_tokens=128):
-    if "Mistral" in model_name:
+    if "Mistral" or "Qwen" in model_name:
         raw_output = model.generate(texts=question_prompt,
                                     texts_with_context=prompt,
                                     alpha=alpha,
@@ -288,6 +288,19 @@ def split_into_sentences(text: str) -> Tuple[List[str], List[str]]:
         cur_start = cur_end + len(sentence)
     return sentences, separators
 
+def get_chat_template_kwargs(model_name):
+    """Get appropriate kwargs for chat template based on model name"""
+    kwargs = {
+        "tokenize": False,
+        "add_generation_prompt": True
+    }
+
+    if "Qwen3" in model_name:
+        kwargs["enable_thinking"] = False
+    
+    return kwargs
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", default="mistralai/Mistral-7B-Instruct-v0.2")
@@ -329,12 +342,19 @@ def main():
     #                                                   use_auth_token=True,
     #                                                   attn_implementation="flash_attention_2",
     #                                                   cache_dir="/mnt/ceph_rbd/llms")
-    
-    base_model = AutoModelForCausalLM.from_pretrained(model_name, 
-                                                      torch_dtype=torch.bfloat16,
-                                                      device_map="auto",
-                                                      use_auth_token=True,
-                                                      cache_dir="/mnt/ceph_rbd/llms")
+    if "Qwen" in model_name:
+        base_model = AutoModelForCausalLM.from_pretrained(
+                        model_name,
+                        torch_dtype="auto",
+                        device_map="auto",
+                        cache_dir="/mnt/ceph_rbd/llms",
+                    )
+    else:
+        base_model = AutoModelForCausalLM.from_pretrained(model_name, 
+                                                        torch_dtype=torch.bfloat16,
+                                                        device_map="auto",
+                                                        use_auth_token=True,
+                                                        cache_dir="/mnt/ceph_rbd/llms")
     
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     if tokenizer.pad_token is None:
@@ -353,6 +373,9 @@ def main():
 
     log_path = Path(args.log_path)
     output_path = log_path / f"{args.exp_name}_preds.json"
+    
+    # Set chat template parameters based on model name
+    chat_template_kwargs = get_chat_template_kwargs(model_name)
 
     processed_samples = []
     for idx, sample in tqdm(enumerate(test_data)):
@@ -385,23 +408,15 @@ def main():
 
             # Add chat templates
             question_prompt_text = tokenizer.apply_chat_template(question_messages,
-                                                                 tokenize=False,
-                                                                 add_generation_prompt=True)
+                                                                 **chat_template_kwargs)
             prompt_text = tokenizer.apply_chat_template(messages,
-                                                        tokenize=False,
-                                                        add_generation_prompt=True)
+                                                        **chat_template_kwargs)
             output_text = cad_generate(model, tokenizer, 
                                        question_prompt=question_prompt_text, prompt=prompt_text, 
                                        model_name=model_name, alpha=args.alpha, max_new_tokens=args.max_new_tokens)
         elif args.method == "dola":
-            raw_prompt = tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True
-            )
-
+            raw_prompt = tokenizer.apply_chat_template(messages, **chat_template_kwargs)
             prompt_ids = tokenizer.encode(raw_prompt, add_special_tokens=False)
-
             input_ids = torch.tensor([prompt_ids], device=model.device)
 
             generate_kwargs = {
@@ -419,8 +434,7 @@ def main():
         else:
             raw_prompt = tokenizer.apply_chat_template(
                 messages,
-                tokenize=False,
-                add_generation_prompt=True
+                **chat_template_kwargs
             )
 
             prompt_ids = tokenizer.encode(raw_prompt, add_special_tokens=False)

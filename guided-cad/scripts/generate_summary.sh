@@ -10,6 +10,8 @@ if [ "$MODEL" = "llama3.1-8b" ]; then
     MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct"
 elif [ "$MODEL" = "mistral-7b" ]; then
     MODEL_NAME="mistralai/Mistral-7B-Instruct-v0.2"
+elif [ "$MODEL" = "qwen3-32b" ]; then
+    MODEL_NAME="Qwen/Qwen3-32B"
 else
     echo "Invalid model option"
 fi
@@ -23,7 +25,7 @@ for schema in "${schema_methods[@]}"; do
     set -x;
     python generate_summary_new.py --model_name ${MODEL_NAME} \
                                     --dataset ${DATASET} \
-                                    --attr_data_path ../attribution/results/${DATASET}-${MODEL}-${ATTRIBUTION}-${NUM_SAMPLES}.json \
+                                    --attr_data_path ../attribution/results/${DATASET}-${MODEL}-${ATTRIBUTION}-${NUM_SAMPLES}_preds.json \
                                     --num_samples ${NUM_SAMPLES} \
                                     --log_path results/summary/${DATASET}/${MODEL} \
                                     --exp_name ${DATASET}-${MODEL}-${ATTRIBUTION}-${schema}-${NUM_SAMPLES} \
@@ -49,7 +51,7 @@ for schema in "${cad_methods[@]}"; do
     set -x;
     python generate_summary_new.py --model_name ${MODEL_NAME} \
                                     --dataset ${DATASET} \
-                                    --attr_data_path ../attribution/results/${DATASET}-${MODEL}-${ATTRIBUTION}-${NUM_SAMPLES}.json \
+                                    --attr_data_path ../attribution/results/${DATASET}-${MODEL}-${ATTRIBUTION}-${NUM_SAMPLES}_preds.json \
                                     --num_samples ${NUM_SAMPLES} \
                                     --log_path results/summary/${DATASET}/${MODEL} \
                                     --exp_name ${DATASET}-${MODEL}-${ATTRIBUTION}-${schema}-cad-${NUM_SAMPLES} \

@@ -16,19 +16,42 @@ from prefs.factscorer import FactScorer
 input_key = {
     "xsum": "document",
     "cnn_dm": "article",
-    "ccsum": "article"
+    "ccsum": "article",
+    "summscreen": "input",
+    "qmsum": "input"
 }
 
 output_key = {
     "xsum": "summary",
     "cnn_dm": "highlights",
-    "ccsum": "summary"
+    "ccsum": "summary",
+    "summscreen": "output",
+    "qmsum": "output"
 }
 
 def mean_score(scores):
     return sum(scores) / len(scores)
 
 def compute_factscore(pred, gold, afg, fs):
+    # Extract atomic facts from prediction and gold summary
+    predicted_facts_and_sources = afg.extract_facts(pred)
+    predicted_facts = [x for item in predicted_facts_and_sources for x in item[1]]
+    predicted_facts = filter_facts(predicted_facts)
+
+    fact_precision, fs_score_per_fact = fs.get_score(predicted_facts,
+                                                     gold,
+                                                     summname='test-summary',
+                                                    )
+
+    # Handle corner cases
+    if len(predicted_facts) == 0 or np.isnan(fact_precision):
+        fact_precision = 0.0
+
+    metrics = {"fact_precision": fact_precision}
+
+    return metrics, predicted_facts, fs_score_per_fact
+
+def compute_prefscore(pred, gold, afg, fs):
     # Extract atomic facts from prediction and gold summary
     # afg = AtomicFactGenerator(model_name, cache_dir_prefix)
     predicted_facts_and_sources = afg.extract_facts(pred)
@@ -83,8 +106,8 @@ def filter_facts(facts):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_path", type=str, help="Path to the prediction file (.json)")
-    parser.add_argument("--dataset", default="xsum", type=str, choices=['cnn_dm', 'xsum', 'extra_cnn', 'ccsum'])
-    parser.add_argument("--metrics", type=str, choices=["summac", "factscore"], default="factscore", help="Which evaluation metrics to compute")
+    parser.add_argument("--dataset", default="xsum", type=str, choices=['cnn_dm', 'xsum', 'extra_cnn', 'ccsum', 'summscreen', 'qmsum'])
+    parser.add_argument("--metrics", type=str, choices=["summac", "factscore", "prisma"], default="factscore", help="Which evaluation metrics to compute")
     parser.add_argument("--log_path", type=str, help="Path to save the evaluation results for each file")
     parser.add_argument("--model_name", type=str, default="gpt-4o-mini", help="Model used for computing FactScore")
     parser.add_argument("--exp_dir", type=str, default=".", help="Store cache files and evaluation metrics in this directory")
@@ -109,7 +132,8 @@ if __name__ == "__main__":
         "meta-llama/Llama-3.3-70B-Instruct": "llama3.3-70b",
         "Qwen/Qwen2.5-7B-Instruct": "qwen2.5-7b",
         "Qwen/Qwen2.5-72B-Instruct-AWQ": "qwen2.5-72b",
-        "gpt-4o-mini": "gpt-4o-mini"
+        "gpt-4o-mini": "gpt-4o-mini",
+        "Qwen/Qwen3-32B": "qwen3-32b"
     }
 
     # Model for computing Summa-C scores
@@ -149,8 +173,20 @@ if __name__ == "__main__":
 
         # Compute fact scores (TODO: debug nan, check the length/variables/fact_recall, e.g. using xsum-mistral-7b-base_preds.json)
         if args.metrics == "factscore":
+            fact_score, predicted_facts, score_per_fact = compute_factscore(
+                example_output,
+                document,
+                afg,
+                fs
+            )
+            fact_scores.append(fact_score["fact_precision"])
+            annotated_sample["fact_precision"] = fact_score["fact_precision"]
+            annotated_sample["predicted_facts"] = predicted_facts
+            annotated_sample["score_per_fact"] = score_per_fact
+
+        if args.metrics == "prisma":
         #    fact_score = compute_factscore(example_output, gold_summary)
-            fact_score, predicted_facts, gold_facts, score_per_fact = compute_factscore(
+            fact_score, predicted_facts, gold_facts, score_per_fact = compute_prefscore(
                 example_output, 
                 document, 
                 afg,
@@ -197,8 +233,18 @@ if __name__ == "__main__":
         with open(log_path, "a") as fout:
             fout.write(f"Summa-C score: {avg_summac_score}\n")
     
-    # Compute fact scores and PRISMA score
+    # Compute fact score
     if args.metrics == "factscore":
+        avg_fact_score = mean_score(fact_scores)
+        print("Fact Precision:", avg_fact_score)
+        evaluation_metrics["fact_precision"] = avg_fact_score
+
+        with open(log_path, "a") as fout:
+            fout.write(json.dumps(evaluation_metrics) + "\n")
+
+
+    # Compute fact scores and PRISMA score
+    if args.metrics == "prisma":
         avg_fact_score = mean_score(fact_scores)
         avg_prisma_score = mean_score(prisma_scores)
         print("Fact Precision:", avg_fact_score)
