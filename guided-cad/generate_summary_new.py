@@ -41,7 +41,8 @@ def get_prompt(doc, important_sents, schema, dataset):
         elif dataset == "cnn_dm":
             instruction = "Summarise the document below:"
         elif dataset == "ccsum":
-            instruction = "Summarise the document below in one sentence or two sentences:"
+            # instruction = "Summarise the document below in one sentence or two sentences:"
+            instruction = "Generate an abstractive summary of the document below in one sentence:"
 
         prompt = f"{instruction}\n{doc}"
     
@@ -51,9 +52,11 @@ def get_prompt(doc, important_sents, schema, dataset):
         elif dataset == "cnn_dm":
             instruction = "Summarise the document below:"
         elif dataset == "ccsum":
-            instruction = "Summarise the document below in one sentence or two sentences:"
+            # instruction = "Summarise the document below in one sentence or two sentences:"
+            instruction = "Generate an abstractive summary of the document below in one sentence:"
         
-        prompt = f"{instruction}\n{doc}\nYou should pay attention to the following main points:\n"  # TODO: try subtracting these sentences from the input doc?
+#        prompt = f"{instruction}\n{doc}\nYou should pay attention to the following main points:\n"  # TODO: try subtracting these sentences from the input doc?
+        prompt = f"{instruction}\n{doc}\nYou should only focus on the following main points:\n"
         for id, sent in enumerate(important_sents):
             prompt += f"{str(id + 1)}. {sent}\n"  # TODO: try list important sentences according to their original order
     
@@ -63,7 +66,8 @@ def get_prompt(doc, important_sents, schema, dataset):
         elif dataset == "cnn_dm":
             prompt = f"Summarise the following points by sentences:\n"
         elif dataset == "ccsum":
-            prompt = f"Summarise the following points in one sentence or two sentences:\n"
+            # prompt = f"Summarise the following points in one sentence or two sentences:\n"
+            prompt = f"Generate an abstractive summary of the following points in one sentence:\n"
         
         for id, sent in enumerate(important_sents):
             prompt += f"{str(id + 1)}. {sent}\n"
@@ -90,7 +94,8 @@ def get_prompt(doc, important_sents, schema, dataset):
         elif dataset == "cnn_dm":
             instruction = "Summarise the document below:"
         elif dataset == "ccsum":
-            instruction = "Summarise the document below in one sentence or two sentences:"
+            # instruction = "Summarise the document below in one sentence or two sentences:"
+            instruction = "Generate an abstractive summary of the document below in one sentence:"
 
         prompt = f"{instruction}\n{doc}"
     
@@ -115,9 +120,11 @@ def get_prompt(doc, important_sents, schema, dataset):
         elif dataset == "cnn_dm":
             instruction = "Summarise the document below:"
         elif dataset == "ccsum":
-            instruction = "Summarise the document below in one sentence or two sentences:"
+            # instruction = "Summarise the document below in one sentence or two sentences:"
+            instruction = "Generate an abstractive summary of the document below in one sentence:"
         
-        prompt = f"You should pay attention to the following main points:\n"  # TODO: try subtracting these sentences from the input doc?
+        prompt = f"You should only focus on the following main points:\n"
+        # prompt = f"You should pay attention to the following main points:\n"  # TODO: try subtracting these sentences from the input doc?
         for id, sent in enumerate(important_sents):
             prompt += f"{str(id + 1)}. {sent}\n"
         
@@ -134,7 +141,8 @@ def get_question_prompt(doc, schema, dataset, important_sents=None):
         elif dataset == "cnn_dm":
             instruction = "Summarise the document below."
         elif dataset == "ccsum":
-            instruction = "Summarise the document below in one sentence or two sentences."
+            # instruction = "Summarise the document below in one sentence or two sentences."
+            instruction = "Generate an abstractive summary of the document below in one sentence."
         
         prompt = instruction + "\nSummary:"
 
@@ -144,7 +152,8 @@ def get_question_prompt(doc, schema, dataset, important_sents=None):
         elif dataset == "cnn_dm":
             instruction = "Summarise the document below:"
         elif dataset == "ccsum":
-            instruction = "Summarise the document below in one sentence or two sentences:"
+            # instruction = "Summarise the document below in one sentence or two sentences:"
+            instruction = "Generate an abstractive summary of the document below in one sentence:"
         
         prompt = f"{instruction}\n{doc}"
     
@@ -175,7 +184,8 @@ def get_question_prompt(doc, schema, dataset, important_sents=None):
         elif dataset == "cnn_dm":
             instruction = "Summarise the document below:"
         elif dataset == "ccsum":
-            instruction = "Summarise the document below in one sentence or two sentences:"
+            # instruction = "Summarise the document below in one sentence or two sentences:"
+            instruction = "Generate an abstractive summary of the document below in one sentence:"
         
         prompt = f"{instruction}\n{processed_article}"
         

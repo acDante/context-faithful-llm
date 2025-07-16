@@ -12,7 +12,7 @@ class OpenAIModel(object):
     def generate(self, prompt, max_output_tokens):
         to_send = [{'role':'user', 'content':prompt}]
         client = openai.OpenAI(api_key=self.api_key)
-        waittime = 2
+        waittime = 1
         while True:
             try:
                 response = client.chat.completions.create(

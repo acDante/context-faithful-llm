@@ -37,7 +37,8 @@ def get_prompt_template(method, dataset):
         elif dataset == "cnn_dm":
             prompt_template = "Summarise the document below:\n{doc}"
         elif dataset == "ccsum":
-            prompt_template = "Summarise the document below in one sentence or two sentences:\n{doc}"
+            # prompt_template = "Summarise the document below in one sentence or two sentences:\n{doc}"
+            prompt_template = "Generate an abstractive summary of the document below in one sentence:\n{doc}"
 
     elif method == "gen_attr":
         if dataset == "xsum":
@@ -45,7 +46,8 @@ def get_prompt_template(method, dataset):
         elif dataset == "cnn_dm":
             prompt_template = "Extract a list of {num_sents} key sentences from the input document and then generate a summary only based on the extracted facts: {doc}\n\nHere is the output format.\nKey Sentences:\n1. sentence1, 2. sentence2, ...\nSummary:\n[summary]\n"
         elif dataset == "ccsum":
-            prompt_template = "Extract a list of {num_sents} key sentences from the input document and then generate a summary in one sentence or two sentences only based on the extracted facts: {doc}\n\nHere is the output format.\nKey Sentences:\n1. sentence1, 2. sentence2, ...\nSummary:\n[summary]\n"
+            # prompt_template = "Extract a list of {num_sents} key sentences from the input document and then generate a summary in one sentence or two sentences only based on the extracted facts: {doc}\n\nHere is the output format.\nKey Sentences:\n1. sentence1, 2. sentence2, ...\nSummary:\n[summary]\n"
+            prompt_template = "Extract a list of {num_sents} key sentences from the input document and then generate an abstractive summary in one sentence only based on the extracted facts: {doc}\n\nHere is the output format.\nKey Sentences:\n1. sentence1, 2. sentence2, ...\nSummary:\n[summary]\n"
     
     return prompt_template
 
@@ -83,7 +85,8 @@ def load_data(args):
         test_data = load_dataset('cnn_dailymail', '3.0.0', split='test')
     elif args.dataset == "ccsum":
         # load CCSum test data (abstractive subset)
-        ccsum_dataset = load_dataset("/mnt/ceph_rbd/datasets/ccsum")
+        # ccsum_dataset = load_dataset("/mnt/ceph_rbd/datasets/ccsum")  # Use this on EIDF
+        ccsum_dataset = load_dataset("/home/xiaotang/Project/context-faithful-llm/datasets/ccsum")
         dataset_abstractive = ccsum_dataset.filter(lambda x: x["abstractiveness_bin"] == "high")
         test_data = dataset_abstractive['test']
         
@@ -200,7 +203,7 @@ def main():
     load_dotenv("../.env")
     hf_token = os.environ.get("HF_TOKEN")
     openai_api_key = os.environ.get("OPENAI_API_KEY")
-    login(hf_token)
+    # login(hf_token)
     
     # Load test dataset
     test_data = load_data(args)
@@ -208,7 +211,8 @@ def main():
     if "gpt" in args.model_name:
         model = OpenAI(api_key=openai_api_key)
     else:
-        model, tokenizer = load_model_and_tokenzier(model_name=args.model_name, cache_dir="/mnt/ceph_rbd/llms")
+        # model, tokenizer = load_model_and_tokenzier(model_name=args.model_name, cache_dir="/mnt/ceph_rbd/llms")  # Use this on EIDF
+        model, tokenizer = load_model_and_tokenzier(model_name=args.model_name, cache_dir="/mnt/ssd/llms")
 
     log_path = Path(args.log_path)
     output_path = log_path / f"{args.exp_name}_preds.json"
