@@ -6,6 +6,7 @@ import copy
 
 import torch
 from context_cite import ContextCiter
+from context_cite.context_citer import Qwen3ContextCiter
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 from datasets import load_dataset
 from huggingface_hub import login
@@ -16,13 +17,15 @@ from dotenv import load_dotenv
 input_key = {
     "xsum": "document",
     "cnn_dm": "article",
-    "ccsum": "article"
+    "ccsum": "article",
+    "gov_report": "input"
 }
 
 output_key = {
     "xsum": "summary",
     "cnn_dm": "highlights",
-    "ccsum": "summary"
+    "ccsum": "summary",
+    "gov_report": "output"
 }
 
 def load_data(dataset_name):
@@ -37,6 +40,8 @@ def load_data(dataset_name):
         ccsum_dataset = load_dataset("/mnt/ceph_rbd/datasets/ccsum")
         dataset_abstractive = ccsum_dataset.filter(lambda x: x["abstractiveness_bin"] == "high")
         test_data = dataset_abstractive['test']
+    elif dataset_name == "gov_report":
+        test_data = load_dataset("tau/scrolls", dataset_name)["validation"]
     
     return test_data
 
@@ -45,10 +50,16 @@ def load_model(model_name, cache_dir="/mnt/ceph_rbd/llms", device="cuda"):
     context_window_length = getattr(config, 'max_position_embeddings', 
                                     getattr(config, 'n_positions', None))
     
-    model = AutoModelForCausalLM.from_pretrained(model_name,
-                                                 torch_dtype=torch.bfloat16,
-                                                 device_map="auto",
-                                                 cache_dir=cache_dir)
+    if "Qwen" in model_name:
+        model = AutoModelForCausalLM.from_pretrained(model_name,
+                                                     torch_dtype="auto",
+                                                     device_map="auto",
+                                                     cache_dir=cache_dir)
+    else:
+        model = AutoModelForCausalLM.from_pretrained(model_name,
+                                                    torch_dtype=torch.bfloat16,
+                                                    device_map="auto",
+                                                    cache_dir=cache_dir)
     
     tokenizer = AutoTokenizer.from_pretrained(model_name, 
                                               cache_dir=cache_dir)
@@ -64,13 +75,17 @@ def get_prompt_template(dataset_name):
     elif dataset_name == "cnn_dm":
         prompt_template = "Summarise the document below:\n{context}"
     elif dataset_name == "ccsum":
-        prompt_template = "Summarise the document below in one sentence or two sentences:\n{context}"
+        # prompt_template = "Summarise the document below in one sentence or two sentences:\n{context}"
+        # prompt_template = "Generate an abstractive summary of the document below in one sentence:\n{context}"
+        prompt_template = "Summarize the following news article into one brief sentence:\n{context}"
+    elif dataset_name == "gov_report":
+        prompt_template = "You are given a report by a government agency. Write a one-page summary of the report. You must give your answer in a structured format: \"Summary: [your summary]\", where [your summary] is your generated summary.\n\nReport:\n{context}"
 
     return prompt_template
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", default="xsum", type=str, choices=['cnn_dm', 'xsum', 'extra_cnn', 'ccsum'])
+    parser.add_argument("--dataset", default="xsum", type=str, choices=['cnn_dm', 'xsum', 'extra_cnn', 'ccsum', 'gov_report'])
     parser.add_argument("--model_name", default="mistralai/Mistral-7B-Instruct-v0.2")
     parser.add_argument("--num_samples", default=1000, type=int, help="Number of test instances to processs")
     parser.add_argument("--num_sents", default=3, type=int, help="Number of most important sentences to extract")
@@ -93,6 +108,8 @@ def main():
     test_data = test_data.select(range(min(args.num_samples, len(test_data))))
     if args.dataset == "cnn_dm":
         max_new_tokens = 512
+    elif args.dataset == "gov_report":
+        max_new_tokens = 1024
     else:
         max_new_tokens = 128
 
@@ -105,13 +122,23 @@ def main():
         query = ""
 
         # Extract top K attributed sentences by ContextCiter
-        cc = ContextCiter(model, tokenizer, context, query)
+        if "Qwen3" in args.model_name:
+            cc = Qwen3ContextCiter(model, tokenizer, context, query)
+        else:
+            cc = ContextCiter(model, tokenizer, context, query)
         cc.prompt_template = get_prompt_template(args.dataset)
         cc.generate_kwargs = {
             "max_new_tokens": max_new_tokens,
             "do_sample": False,
             "temperature": 0.0
         }
+
+        if "Llama-3" in args.model_name:
+            terminators = [
+                tokenizer.eos_token_id,
+                tokenizer.convert_tokens_to_ids("<|eot_id|>")
+            ]
+            cc.generate_kwargs["eos_token_id"] = terminators
 
         results = cc.get_attributions(as_dataframe=True, top_k=args.num_sents)
         df = results.data

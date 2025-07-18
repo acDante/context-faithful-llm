@@ -18,7 +18,8 @@ input_key = {
     "cnn_dm": "article",
     "ccsum": "article",
     "summscreen": "input",
-    "qmsum": "input"
+    "qmsum": "input",
+    "gov_report": "input"
 }
 
 output_key = {
@@ -26,7 +27,8 @@ output_key = {
     "cnn_dm": "highlights",
     "ccsum": "summary",
     "summscreen": "output",
-    "qmsum": "output"
+    "qmsum": "output",
+    "gov_report": "output"
 }
 
 def mean_score(scores):
@@ -106,7 +108,7 @@ def filter_facts(facts):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_path", type=str, help="Path to the prediction file (.json)")
-    parser.add_argument("--dataset", default="xsum", type=str, choices=['cnn_dm', 'xsum', 'extra_cnn', 'ccsum', 'summscreen', 'qmsum'])
+    parser.add_argument("--dataset", default="xsum", type=str, choices=['cnn_dm', 'xsum', 'extra_cnn', 'ccsum', 'summscreen', 'qmsum', 'gov_report'])
     parser.add_argument("--metrics", type=str, choices=["summac", "factscore", "prisma"], default="factscore", help="Which evaluation metrics to compute")
     parser.add_argument("--log_path", type=str, help="Path to save the evaluation results for each file")
     parser.add_argument("--model_name", type=str, default="gpt-4o-mini", help="Model used for computing FactScore")
@@ -133,7 +135,9 @@ if __name__ == "__main__":
         "Qwen/Qwen2.5-7B-Instruct": "qwen2.5-7b",
         "Qwen/Qwen2.5-72B-Instruct-AWQ": "qwen2.5-72b",
         "gpt-4o-mini": "gpt-4o-mini",
-        "Qwen/Qwen3-32B": "qwen3-32b"
+        "Qwen/Qwen3-32B": "qwen3-32b",
+        "Qwen/Qwen3-14B": "qwen3-14b",
+        "Qwen/Qwen3-8B": "qwen3-8b"
     }
 
     # Model for computing Summa-C scores

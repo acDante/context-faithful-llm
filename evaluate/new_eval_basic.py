@@ -18,7 +18,8 @@ input_key = {
     "cnn_dm": "article",
     "ccsum": "article",
     "summscreen": "input",
-    "qmsum": "input"
+    "qmsum": "input",
+    "gov_report": "input"
 }
 
 output_key = {
@@ -26,7 +27,8 @@ output_key = {
     "cnn_dm": "highlights",
     "ccsum": "summary",
     "summscreen": "output",
-    "qmsum": "output"
+    "qmsum": "output",
+    "gov_report": "output"
 }
 
 def extract_filename(json_path):
@@ -113,7 +115,7 @@ def postprocess_text(preds, labels):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_path", type=str, help="Path to the prediction file (.json)")
-    parser.add_argument("--dataset", default="xsum", type=str, choices=['cnn_dm', 'xsum', 'extra_cnn', 'ccsum', 'summscreen', 'qmsum'])
+    parser.add_argument("--dataset", default="xsum", type=str, choices=['cnn_dm', 'xsum', 'extra_cnn', 'ccsum', 'summscreen', 'qmsum', 'gov_report'])
     parser.add_argument("--log_path", type=str, help="Path to save the evaluation results for each file")
     args = parser.parse_args()
     return args
@@ -121,9 +123,10 @@ def parse_args():
 if __name__ == "__main__":
 
     args = parse_args()
+    gpu_id = int(os.environ.get('CUDA_VISIBLE_DEVICES', '0').split(',')[0])
 
     # Model for computing Summa-C scores
-    model_conv = SummaCConv(models=["vitc"], bins='percentile', granularity="sentence", nli_labels="e", device="cuda:0", start_file="default", agg="mean")
+    model_conv = SummaCConv(models=["vitc"], bins='percentile', granularity="sentence", nli_labels="e", device=f"cuda:0", start_file="default", agg="mean")
 
     data_path  = args.data_path
     with open(data_path, 'r') as fin:
