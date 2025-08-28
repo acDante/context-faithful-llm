@@ -178,9 +178,11 @@ if __name__ == "__main__":
     if not os.path.exists(log_path):
         with open(save_path, "w") as fout:
             json.dump(evaluation_metrics, fout, indent=4)
+            fout.write('\n')
     else:
         with open(save_path, "a") as fout:
             json.dump(evaluation_metrics, fout, indent=4)
+            fout.write('\n')
     # with open(os.path.join(log_path, "average_metrics.json"), "w") as fout:
     #     json.dump(evaluation_metrics, fout, indent=4)
     

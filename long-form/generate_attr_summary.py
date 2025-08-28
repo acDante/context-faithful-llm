@@ -14,7 +14,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Extract generative attribution on long-form datasets using vLLM")
     parser.add_argument("--model", default="meta-llama/Llama-3.2-3B-Instruct", 
                         help="Model name")
-    parser.add_argument("--dataset", choices=["qmsum", "summscreen"], default="summscreen",
+    parser.add_argument("--dataset", choices=["qmsum", "summscreen", "gov_report"], default="summscreen",
                         help="Dataset used for evaluation")
     parser.add_argument("--save-path", default="results/attribution", help="Path to save the predictions")
     parser.add_argument("--split", default="validation", help="Dataset split")
@@ -37,6 +37,7 @@ def get_short_model_name(model_name):
         "meta-llama/Llama-3.1-8B-Instruct": "llama3.1-8b",
         "meta-llama/Llama-3.1-70B-Instruct": "llama3.1-70b",
         "Qwen/Qwen3-8B": "qwen3-8b",
+        "Qwen/Qwen3-14B": "qwen3-14b",
         "Qwen/Qwen3-32B": "qwen3-32b",
         "Qwen/Qwen2.5-7B-Instruct": "qwen2.5-7b",
         "Qwen/Qwen2.5-14B-Instruct": "qwen2.5-14b",
@@ -101,17 +102,39 @@ def main():
     args = parse_args()
 
     # Initialize the model
-    llm = LLM(
-        model = args.model,
-        max_model_len = args.max_model_len,
-        gpu_memory_utilization = args.gpu_memory_utilization,
-        tensor_parallel_size=args.tensor_parallel_size,
-        enable_chunked_prefill=True,
-        max_num_batched_tokens=args.max_num_batched_tokens,  # Reduce if OOM, increase for better throughput
-        swap_space=4,   # GB of CPU memory for overflow
-        enforce_eager=False,  # Keep as False for better performance
-        download_dir="/mnt/ceph_rbd/llms"
-    )
+    if "Qwen" in args.model:
+        # Use YARN to extend context length
+        rope_scaling = {
+            "rope_type": "yarn",
+            "factor": 4.0,
+            "original_max_position_embeddings": 32768
+        }
+        llm = LLM(
+            model = args.model,
+            max_model_len = args.max_model_len,
+            gpu_memory_utilization = args.gpu_memory_utilization,
+            tensor_parallel_size=args.tensor_parallel_size,
+            enable_chunked_prefill=True,
+            max_num_batched_tokens=args.max_num_batched_tokens,  # Reduce if OOM, increase for better throughput
+            swap_space=4,   # GB of CPU memory for overflow
+            enforce_eager=False,  # Keep as False for better performance
+            download_dir="/mnt/ceph_rbd/llms",
+            rope_scaling=rope_scaling,
+            trust_remote_code=True
+        )
+
+    else:
+        llm = LLM(
+            model = args.model,
+            max_model_len = args.max_model_len,
+            gpu_memory_utilization = args.gpu_memory_utilization,
+            tensor_parallel_size=args.tensor_parallel_size,
+            enable_chunked_prefill=True,
+            max_num_batched_tokens=args.max_num_batched_tokens,  # Reduce if OOM, increase for better throughput
+            swap_space=4,   # GB of CPU memory for overflow
+            enforce_eager=False,  # Keep as False for better performance
+            download_dir="/mnt/ceph_rbd/llms"
+        )
 
     sampling_params = SamplingParams(
         temperature=args.temperature,
@@ -119,8 +142,20 @@ def main():
     )
 
     # Load the dataset
-    dataset_map = {"qmsum": "qmsum", "summscreen": "summ_screen_fd"}
-    dataset = load_dataset("tau/scrolls", dataset_map[args.dataset])[args.split]
+    dataset_map = {"qmsum": "qmsum", "summscreen": "summ_screen_fd", "gov_report": "gov_report"}
+    # Load non query-based QMSum test data
+    # if args.dataset == "qmsum":
+    #     data_path = "/mnt/ceph_rbd/datasets/QMSum/processed_data/test.jsonl"
+    #     dataset = []
+    #     with open(data_path, 'r', encoding='utf-8') as f:
+    #         for line in f:
+    #             line = line.strip()
+    #             if line:
+    #                 dataset.append(json.loads(line))
+    #     data = dataset[:args.max_samples]
+
+    # else:
+    dataset = load_dataset("tau/scrolls", dataset_map[args.dataset], trust_remote_code=True)[args.split]
     data = dataset.select(range(min(args.max_samples, len(dataset))))
 
     documents = [item['input'] for item in data]
@@ -129,14 +164,15 @@ def main():
     # Prompt template (adapted from longform-chat)
     if args.attr_type == "fact":
         prompt_template = {
-            "qmsum": "Read the following meeting transcript. Extract a list of {num_sents} key decisions, action items and discussion points from the input document and then produce a summary in 5 sentences only focusing on the extracted facts. You must give your answer in a structured format: \"Key Facts:\n1. sentence1, 2. sentence2, ...\nSummary: [your summary]\", where [your summary] is your generated summary.\n==========\n[MEETING TRANSCRIPT]\n==========\n{doc}",
+            "qmsum": "Read the following meeting transcript. Extract a list of {num_sents} key decisions, action items and discussion points from the input document and then produce a summary in 4 sentences only focusing on the extracted facts. You must give your answer in a structured format: \"Key Facts:\n1. sentence1, 2. sentence2, ...\nSummary: [your summary]\", where [your summary] is your generated summary.\n==========\n[MEETING TRANSCRIPT]\n==========\n{doc}",
             "summscreen": "Read the following TV episode transcript. Extract a list of {num_sents} key plot developments and story events from the input document and then produce a summary in 5 sentences only focusing on the extracted facts. You must give your answer in a structured format: \"Key Facts:\n1. sentence1, 2. sentence2, ...\nSummary: [your summary]\", where [your summary] is your generated summary.\n==========\n[TV EPISODE TRANSCRIPT]\n==========\n{doc}"
         }
 
     elif args.attr_type == "sentence":
         prompt_template = {
-            "qmsum": "Read the following meeting transcript. Extract a list of {num_sents} key sentences from the input document and then produce a summary in 5 sentences only focusing on the extracted sentences. You must give your answer in a structured format: \"Key Sentences:\n1. sentence1, 2. sentence2, ...\nSummary: [your summary]\", where [your summary] is your generated summary.\n==========\n[MEETING TRANSCRIPT]\n==========\n{doc}",
-            "summscreen": "Read the following TV episode transcript. Extract a list of {num_sents} key sentences from the input document and then produce a summary in 5 sentences only focusing on the extracted sentences. You must give your answer in a structured format: \"Key Sentences:\n1. sentence1, 2. sentence2, ...\nSummary: [your summary]\", where [your summary] is your generated summary.\n==========\n[TV EPISODE TRANSCRIPT]\n==========\n{doc}"
+            "qmsum": "Read the following meeting transcript. Extract a list of {num_sents} key sentences from the input document and then produce a summary in 4 sentences only focusing on the extracted sentences. You must give your answer in a structured format: \"Key Sentences:\n1. sentence1, 2. sentence2, ...\nSummary: [your summary]\", where [your summary] is your generated summary.\n==========\n[MEETING TRANSCRIPT]\n==========\n{doc}",
+            "summscreen": "Read the following TV episode transcript. Extract a list of {num_sents} key sentences from the input document and then produce a summary in 5 sentences only focusing on the extracted sentences. You must give your answer in a structured format: \"Key Sentences:\n1. sentence1, 2. sentence2, ...\nSummary: [your summary]\", where [your summary] is your generated summary.\n==========\n[TV EPISODE TRANSCRIPT]\n==========\n{doc}",
+            "gov_report": "You are given a report by a government agency. Extract a list of {num_sents} key sentences from the input document and then write a one-page summary of the report only focusing on the extracted sentences. You must give your answer in a structured format: \"Key Sentences:\n1. sentence1, 2. sentence2, ...\nSummary: [your summary]\", where [your summary] is your generated summary.\n\nReport:\n{doc}"
         }
 
     # Create chat prompts
@@ -150,7 +186,7 @@ def main():
 
     # Generate summaries with attributed sentences
     predictions = []
-    if "Qwen" in args.model:
+    if "Qwen3" in args.model:
         outputs = llm.chat(messages=chat_messages,
                         sampling_params=sampling_params,
                         use_tqdm=True,

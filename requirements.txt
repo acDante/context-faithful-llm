@@ -4,3 +4,4 @@ scipy
 tiktoken
 tqdm
 scikit-learn
+pylcs

@@ -238,9 +238,11 @@ if __name__ == "__main__":
     if not os.path.exists(log_path):
         with open(save_path, "w") as fout:
             json.dump(evaluation_metrics, fout, indent=4)
+            fout.write('\n')
     else:
         with open(save_path, "a") as fout:
             json.dump(evaluation_metrics, fout, indent=4)
+            fout.write('\n')
     
     with open(os.path.join(log_path, f"qwen_{args.metrics}_per_sample.json"), "w") as fout:
         json.dump(annotated_samples, fout, indent=4)

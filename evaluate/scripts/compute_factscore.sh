@@ -1,9 +1,9 @@
 #!/bin/bash
 # Recompute FactScore for the predictions on CNN/DM dataset
 
-DATASET="$1"
-MODEL="$2"
-ATTRIBUTION="cc"
+DATASET=${1:-"xsum"}
+MODEL=${2:-"llama3.1-8b"}
+ATTRIBUTION=${3:-"attention"}
 
 echo "Running experiments on dataset: $DATASET"
 
@@ -15,10 +15,18 @@ if [ ! -d "$DIRECTORY" ]; then
 fi
 
 JSON_FILES=(
+    "${DATASET}-${MODEL}-base_preds.json"
+    "${DATASET}-${MODEL}-${ATTRIBUTION}-1000_preds.json"
+    "${DATASET}-${MODEL}-${ATTRIBUTION}-base+impt_prefix-1000_preds.json"
+    "${DATASET}-${MODEL}-${ATTRIBUTION}-base+impt-1000_preds.json"
+    "${DATASET}-${MODEL}-${ATTRIBUTION}-base+impt-cad-1000_preds.json"
+    "${DATASET}-${MODEL}-${ATTRIBUTION}-impt_only-1000_preds.json"
+    "${DATASET}-${MODEL}-${ATTRIBUTION}-mask_impt-cad-1000_preds.json"
+
     # "${DATASET}-${MODEL}-${ATTRIBUTION}-base_preds.json"
     # "${DATASET}-${MODEL}-${ATTRIBUTION}-impt_only_preds.json"
-    "${DATASET}-${MODEL}-${ATTRIBUTION}-base+impt_preds.json"
-    "${DATASET}-${MODEL}-${ATTRIBUTION}-impt+cad_preds.json"
+    # "${DATASET}-${MODEL}-${ATTRIBUTION}-base+impt_preds.json"
+    # "${DATASET}-${MODEL}-${ATTRIBUTION}-impt+cad_preds.json"
 )
 
 
